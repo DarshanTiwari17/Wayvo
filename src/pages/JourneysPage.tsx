@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Map as MapIcon, Plus, X } from 'lucide-react'
+import { Map as MapIcon, Plus, Upload, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useJourneys } from '../hooks/useTravelData'
 import { isJourneyPast } from '../services/travelService'
 import { createTripRecord } from '../services/importService'
+import { AddJourneyPanel } from '../components/journeys/AddJourneyPanel'
 import { Banner, Button, Card, EmptyState, Field, PageHeader, SkeletonLines } from '../components/app/Primitives'
 import { JourneyCard } from '../components/journeys/JourneyCard'
 
@@ -22,6 +23,9 @@ export function JourneysPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const formOpen = searchParams.get('new') === '1'
+  // "Import a Booking" is a separate, first-class action — one document, one
+  // journey. It is not the same thing as building an itinerary.
+  const showImport = searchParams.get('import') === '1'
 
   function setFlag(key: string, on: boolean) {
     setSearchParams((params) => {
@@ -41,14 +45,32 @@ export function JourneysPage() {
         title="Your trips"
         description="Each trip holds all the journeys you are taking."
         actions={
-          formOpen ? undefined : (
-            <Button onClick={() => setFlag('new', true)}>
-              <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
-              Add trip
-            </Button>
+          formOpen || showImport ? undefined : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" onClick={() => setFlag('import', true)}>
+                <Upload size={15} strokeWidth={2.2} aria-hidden="true" />
+                Import a booking
+              </Button>
+              <Button onClick={() => setFlag('new', true)}>
+                <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
+                Add trip
+              </Button>
+            </div>
           )
         }
       />
+
+      {/* ---- Import a Booking: one document becomes one journey ---------- */}
+      {showImport && (
+        <AddJourneyPanel
+          mode="single"
+          onClose={() => setFlag('import', false)}
+          onSaved={() => {
+            setFlag('import', false)
+            journeys.reload()
+          }}
+        />
+      )}
 
       {formOpen && (
         <CreateTripForm
@@ -91,17 +113,23 @@ export function JourneysPage() {
         </Banner>
       )}
 
-      {journeys.status === 'ready' && !hasAny && !formOpen && (
+      {journeys.status === 'ready' && !hasAny && !formOpen && !showImport && (
         <Card>
           <EmptyState
             icon={<MapIcon size={22} strokeWidth={1.9} />}
-            title="No trips yet"
-            description="A trip holds all the journeys you are taking. Create one, then add the tickets for each journey and Wayvo will work out the order."
+            title="Nothing here yet"
+            description="Import a single booking you already have, or create a trip and add all the tickets for a whole itinerary at once."
             action={
-              <Button onClick={() => setFlag('new', true)}>
-                <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
-                Add trip
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button variant="secondary" onClick={() => setFlag('import', true)}>
+                  <Upload size={15} strokeWidth={2.2} aria-hidden="true" />
+                  Import a booking
+                </Button>
+                <Button onClick={() => setFlag('new', true)}>
+                  <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
+                  Add trip
+                </Button>
+              </div>
             }
           />
         </Card>
@@ -187,7 +215,7 @@ function CreateTripForm({ onCancel, onCreated }: CreateFormProps) {
         <div>
           <h2 className="wva-h2">Create your trip</h2>
           <p className="wva-meta mt-1">
-            A trip groups the journeys you are taking, so Wayvo can put them in order.
+            Name the trip, then upload all the tickets for it. Wayvo reads each one and works out the order.
           </p>
         </div>
         <button type="button" onClick={onCancel} className="wva-btn wva-btn--ghost wva-btn--sm" aria-label="Cancel">

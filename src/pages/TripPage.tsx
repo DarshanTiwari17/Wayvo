@@ -13,8 +13,8 @@ import {
 } from '../services/importService'
 import type { Itinerary } from '../lib/itineraryBuilder'
 import { formatDateRange } from '../services/travelService'
-import { Banner, Button, Card, PageHeader, Pill, SkeletonLines } from '../components/app/Primitives'
-import { AddJourneyPanel } from '../components/journeys/AddJourneyPanel'
+import { Banner, Button, Card, PageHeader, SkeletonLines } from '../components/app/Primitives'
+import { BatchImportPanel } from '../components/journeys/BatchImportPanel'
 import { ItineraryRouteSummary, ItineraryView } from '../components/journeys/ItineraryView'
 import { ManualSegmentForm } from '../components/journeys/ManualSegmentForm'
 
@@ -37,6 +37,8 @@ export function TripPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // Inside a trip the traveller adds documents in bulk: a whole itinerary's
+  // worth of tickets, not one at a time.
   const [showImport, setShowImport] = useState(false)
   const [showManual, setShowManual] = useState(false)
 
@@ -209,7 +211,7 @@ export function TripPage() {
               <>
                 <Button variant="secondary" onClick={() => setShowImport(true)}>
                   <Upload size={15} strokeWidth={2.2} aria-hidden="true" />
-                  Import a booking
+                  Upload tickets
                 </Button>
                 <Button onClick={() => setShowManual(true)}>
                   <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
@@ -235,11 +237,11 @@ export function TripPage() {
 
       {/* ---- import: the working PDF/ticket path, unchanged in behaviour --- */}
       {showImport && (
-        <AddJourneyPanel
+        <BatchImportPanel
           tripId={trip.id}
           tripName={trip.title}
           onClose={() => setShowImport(false)}
-          onSaved={() => void handleChanged()}
+          onChanged={handleChanged}
         />
       )}
 
@@ -263,13 +265,13 @@ export function TripPage() {
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <h2 className="wva-h3">No bookings in this trip yet</h2>
             <p className="wva-body max-w-md">
-              A trip holds all the journeys you are taking. Upload the tickets you already have, and Wayvo will read them
-              and work out the order for you.
+              Upload all the tickets and bookings for this trip at once — train, bus, flight, hotel. Wayvo reads
+              each one and works out the order for you.
             </p>
             <div className="mt-1 flex flex-wrap justify-center gap-2">
               <Button onClick={() => setShowImport(true)}>
                 <Upload size={15} strokeWidth={2.2} aria-hidden="true" />
-                Upload ticket / PDF
+                Upload tickets / bookings
               </Button>
               <Button variant="secondary" onClick={() => setShowManual(true)}>
                 <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
@@ -299,7 +301,7 @@ export function TripPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>
               <Upload size={14} strokeWidth={2.2} aria-hidden="true" />
-              Add another booking
+              Add more tickets
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setShowManual(true)}>
               <Plus size={14} strokeWidth={2.4} aria-hidden="true" />
@@ -312,8 +314,4 @@ export function TripPage() {
       {!user && null}
     </>
   )
-}
-
-export function TripStatusPill({ trip }: { trip: Trip }) {
-  return <Pill tone={trip.status === 'cancelled' ? 'danger' : 'neutral'}>{trip.status}</Pill>
 }

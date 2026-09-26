@@ -51,6 +51,12 @@ export type ReviewReason =
   | 'gap'
   | 'overlap'
   | 'no_time'
+  /**
+   * The booking ended up before one that leaves earlier. The route chained, but
+   * the dates disagree, which usually means a place name did not match and the
+   * chain started in the wrong place.
+   */
+  | 'out_of_sequence'
   | 'single'
 
 export interface OrderedSegment extends SegmentInput {
@@ -101,7 +107,7 @@ const PARENTHETICAL = /\(([^)]*)\)/g
  * are equal, so this errs towards "not the same place" and lets the caller
  * flag the ambiguity.
  */
-export function normalisePlace(raw: string | null | undefined): string | null {
+function normalisePlace(raw: string | null | undefined): string | null {
   if (!raw) return null
 
   let value = raw.toLowerCase().trim()
@@ -250,8 +256,61 @@ function chain(remaining: SegmentInput[]): {
 }
 
 /* ==========================================================================
+ * Merging events into the chain
+ * ========================================================================== */
+
+/**
+ * Slots each event into the gap it belongs in.
+ *
+ * An event is placed after the last leg that finishes before it starts, so a
+ * hotel checked in after a bus arrives lands directly after that bus — which
+ * also makes the connection time between them come out right.
+ *
+ * An event with no readable time cannot be positioned honestly, so it goes to
+ * the end and is flagged for review rather than dropped or silently guessed.
+ */
+function mergeEvents(legs: SegmentInput[], events: SegmentInput[]): SegmentInput[] {
+  if (events.length === 0) return legs
+  if (legs.length === 0) return [...events].sort(byDeparture)
+
+  const merged = [...legs]
+
+  for (const event of [...events].sort(byDeparture)) {
+    const starts = timeOf(event.departureAt)
+
+    if (starts === null) {
+      merged.push(event)
+      continue
+    }
+
+    // The first leg that starts after this event begins is where the event goes
+    // in front of. Everything before it has already finished.
+    let index = merged.findIndex((leg) => {
+      const legStart = timeOf(leg.departureAt)
+      return legStart !== null && legStart > starts
+    })
+
+    if (index === -1) index = merged.length
+    merged.splice(index, 0, event)
+  }
+
+  return merged
+}
+
+/* ==========================================================================
  * Public entry point
  * ========================================================================== */
+
+/**
+ * A booking that occupies a place in time rather than moving between two places.
+ *
+ * A hotel has a check-in and a check-out but no route, so it cannot be chained
+ * onto the transport legs. Treating one as a leg would flag every hotel as an
+ * unreadable location, which is wrong: the dates were read perfectly well.
+ */
+function isEvent(segment: SegmentInput): boolean {
+  return segment.transportMode === 'hotel' || segment.transportMode === 'other'
+}
 
 /**
  * Rebuilds the itinerary.
@@ -268,7 +327,12 @@ export function buildItinerary(segments: SegmentInput[]): Itinerary {
     return { segments: [], confident: true, notes }
   }
 
-  const { ordered, reasons } = chain(segments)
+  // Chain the legs, then slot the events into the gaps by time.
+  const legs = segments.filter((segment) => !isEvent(segment))
+  const events = segments.filter((segment) => isEvent(segment))
+
+  const { ordered: chained, reasons } = chain(legs)
+  const ordered = mergeEvents(chained, events)
 
   /* --- connection times and the remaining flags ------------------------- */
   const result: OrderedSegment[] = ordered.map((segment, index) => {
@@ -286,7 +350,8 @@ export function buildItinerary(segments: SegmentInput[]): Itinerary {
     let reviewNote: string | null = null
 
     // A booking whose location could not be read cannot be chained at all.
-    if (!normalisePlace(segment.origin) || !normalisePlace(segment.destination)) {
+    // Events are exempt: a hotel is not supposed to have a route.
+    if (!isEvent(segment) && (!normalisePlace(segment.origin) || !normalisePlace(segment.destination))) {
       needsReview = true
       reviewReason = 'no_location'
     }
@@ -306,6 +371,18 @@ export function buildItinerary(segments: SegmentInput[]): Itinerary {
       reviewNote = 'This booking does not continue from the one before it, so its place in the trip is a guess.'
     } else if (reviewReason === 'overlap') {
       reviewNote = 'This booking appears to leave before the one before it arrives. Please check the times.'
+    }
+
+    // The order also has to make sense in time. A chain can break silently:
+    // if one ticket prints "ALIBAG" and another "Alibaug", the two stops do not
+    // match, the walk starts at the wrong end, and the result is confidently
+    // backwards in time. A backwards sequence is a signal that something did
+    // not line up, so it is reported rather than presented as the answer.
+    const previousDeparture = index > 0 ? timeOf(ordered[index - 1].departureAt) : null
+    if (previousDeparture !== null && departure !== null && departure < previousDeparture) {
+      needsReview = true
+      reviewReason = 'out_of_sequence'
+      reviewNote = 'This booking is placed before one that leaves earlier, so the order may be wrong. Please check it.'
     }
 
     if (!reviewNote && connectionMinutes === null && index > 0) {

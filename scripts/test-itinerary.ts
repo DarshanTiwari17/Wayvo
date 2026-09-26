@@ -324,6 +324,181 @@ const routeOf = (segments: { origin: string | null; destination: string | null }
   check('nothing readable and no trip values stays null', blankTrip.origin === null && blankTrip.destination === null)
 }
 
+/* =========================================================================
+ * 14. Hotels and other non-transport bookings
+ *
+ * The specification's example: a train, then a bus, then a hotel checked in an
+ * hour after the bus arrives. The hotel has no origin → destination, so it must
+ * be placed by time rather than flagged as an unreadable location.
+ * ====================================================================== */
+{
+  const segments = [
+    // Supplied out of order, with the hotel first.
+    seg({
+      transportMode: 'hotel', operator: 'Alibaug Resort',
+      departureAt: '2026-11-14T13:45:00', arrivalAt: '2026-11-16T11:00:00',
+    }),
+    seg({
+      origin: 'Panvel', destination: 'Alibaug', transportMode: 'bus',
+      departureAt: '2026-11-14T11:15:00', arrivalAt: '2026-11-14T12:45:00',
+    }),
+    seg({
+      origin: 'Mumbai', destination: 'Panvel', transportMode: 'train',
+      departureAt: '2026-11-14T08:00:00', arrivalAt: '2026-11-14T09:15:00',
+    }),
+  ]
+
+  const result = buildItinerary(segments)
+
+  check(
+    'a hotel is slotted in chronologically, not flagged for a missing route',
+    result.confident === true,
+    routeOf(result.segments) + ' :: ' + result.segments.map((s) => s.reviewNote ?? '').join(' / '),
+  )
+  check(
+    'the order is train, bus, hotel',
+    result.segments.map((s) => s.transportMode).join(',') === 'train,bus,hotel',
+    result.segments.map((s) => s.transportMode).join(','),
+  )
+  check('  the train is first', /^mumbai$/i.test(result.segments[0].origin ?? ''), String(result.segments[0].origin))
+  check('  the bus is second', /^panvel$/i.test(result.segments[1].origin ?? ''), String(result.segments[1].origin))
+  check('  the hotel is last', result.segments[2].transportMode === 'hotel', String(result.segments[2].transportMode))
+  check('  and the hotel keeps its property name', /alibaug resort/i.test(result.segments[2].operator ?? ''), String(result.segments[2].operator))
+  check('  sequence numbers are 0..2', result.segments.map((s) => s.seq).join(',') === '0,1,2')
+
+  // The connection times from the specification.
+  check('bus leaves 2h after the train arrives', result.segments[1].connectionMinutes === 120, String(result.segments[1].connectionMinutes))
+  check('hotel check-in is 1h after the bus arrives', result.segments[2].connectionMinutes === 60, String(result.segments[2].connectionMinutes))
+}
+
+{
+  // A hotel arriving BEFORE the transport chain, e.g. the night before a flight.
+  const segments = [
+    seg({ origin: 'Mumbai', destination: 'Panvel', transportMode: 'train', departureAt: '2026-11-14T08:00:00', arrivalAt: '2026-11-14T09:15:00' }),
+    seg({ transportMode: 'hotel', departureAt: '2026-11-13T14:00:00', arrivalAt: '2026-11-14T07:00:00' }),
+  ]
+  const result = buildItinerary(segments)
+  check('a hotel the night before comes first', result.segments[0].transportMode === 'hotel', result.segments.map((s) => s.transportMode).join(','))
+  check('  and the trip is still confident', result.confident === true, result.segments.map((s) => s.reviewNote ?? '-').join(' / '))
+}
+
+{
+  // An event with no readable time cannot be placed honestly.
+  const segments = [
+    seg({ origin: 'Mumbai', destination: 'Pune', transportMode: 'train', departureAt: '2026-11-14T08:00:00', arrivalAt: '2026-11-14T12:00:00' }),
+    seg({ transportMode: 'hotel', operator: 'Somewhere Hotel' }),
+  ]
+  const result = buildItinerary(segments)
+  check('a hotel with no dates is not silently placed', !result.confident, JSON.stringify(result.segments.map((s) => s.reviewNote)))
+  check('  the leg itself is still fine', result.segments[0].transportMode === 'train' && !result.segments[0].needsReview)
+  check('  and both are still listed', result.segments.length === 2)
+}
+
+{
+  // Events and legs, interleaved, given in a jumbled order.
+  const segments = [
+    seg({ transportMode: 'flight', origin: 'Alibaug', destination: 'Mumbai', departureAt: '2026-11-16T15:00:00', arrivalAt: '2026-11-16T16:15:00' }),
+    seg({ transportMode: 'hotel', departureAt: '2026-11-14T13:45:00', arrivalAt: '2026-11-16T11:00:00' }),
+    seg({ transportMode: 'bus', origin: 'Panvel', destination: 'Alibaug', departureAt: '2026-11-14T11:15:00', arrivalAt: '2026-11-14T12:45:00' }),
+    seg({ transportMode: 'train', origin: 'Mumbai', destination: 'Panvel', departureAt: '2026-11-14T08:00:00', arrivalAt: '2026-11-14T09:15:00' }),
+  ]
+  const result = buildItinerary(segments)
+  check(
+    'legs chain, then the hotel and the return flight follow',
+    result.segments.map((s) => s.transportMode).join(',') === 'train,bus,hotel,flight',
+    result.segments.map((s) => s.transportMode).join(','),
+  )
+  check('  a full mixed itinerary is confident', result.confident === true, result.segments.map((s) => s.reviewNote ?? '-').join(' / '))
+}
+
+{
+  // A trip made only of a hotel must still work.
+  const result = buildItinerary([
+    seg({ transportMode: 'hotel', departureAt: '2026-11-14T13:45:00', arrivalAt: '2026-11-16T11:00:00' }),
+  ])
+  check('a hotel on its own is a valid itinerary', result.segments.length === 1 && result.confident, JSON.stringify(result.notes))
+}
+
+/* =========================================================================
+ * 15. A chain can break silently, and the dates catch it
+ *
+ * If one ticket prints "ALIBAG" and another "Alibaug", the two stops do not
+ * match. The walk then finds only one place that is never a destination, starts
+ * from the wrong end, and produces an order that runs backwards in time — with
+ * every individual link looking perfectly valid.
+ *
+ * This is a real failure found by a real multi-file test, so it is pinned here.
+ * ====================================================================== */
+{
+  // Deliberately inconsistent spellings, exactly as two tickets would print them.
+  const segments = [
+    seg({ origin: 'MUMBAI CENTRAL', destination: 'PANVEL', transportMode: 'train', departureAt: '2026-11-14T08:00:00', arrivalAt: '2026-11-14T09:15:00' }),
+    seg({ origin: 'PANVEL', destination: 'ALIBAG', transportMode: 'bus', departureAt: '2026-11-14T11:15:00', arrivalAt: '2026-11-14T12:45:00' }),
+    seg({ transportMode: 'hotel', operator: 'Alibaug Resort', departureAt: '2026-11-14T13:45:00', arrivalAt: '2026-11-16T11:00:00' }),
+    seg({ origin: 'Alibaug (ABG)', destination: 'Mumbai (BOM)', transportMode: 'flight', departureAt: '2026-11-16T18:40:00', arrivalAt: '2026-11-16T19:15:00' }),
+  ]
+
+  const result = buildItinerary(segments)
+
+  // The chain starts from Alibaug because that is the only place never seen as a
+  // destination, so the return flight is placed first. Every link is "valid"
+  // in isolation, which is exactly why the date check is needed.
+  check(
+    'a broken chain does NOT claim to be confident',
+    result.confident === false,
+    routeOf(result.segments) + ' :: ' + result.segments.map((s) => s.reviewNote ?? '-').join(' / '),
+  )
+  check(
+    'the backwards booking is flagged',
+    result.segments.some((s) => s.reviewReason === 'out_of_sequence'),
+    result.segments.map((s) => String(s.reviewReason)).join(','),
+  )
+  check(
+    '  and the traveller is told to check it',
+    result.segments.some((s) => /may be wrong/.test(s.reviewNote ?? '')),
+    result.segments.map((s) => s.reviewNote ?? '-').join(' / '),
+  )
+  check('  and it is not mistaken for an overlap', !result.segments.some((s) => s.reviewReason === 'overlap'))
+
+  // Every booking is still listed — the itinerary is usable, just not certain.
+  check('  all four bookings are still shown', result.segments.length === 4, String(result.segments.length))
+  check('  the trip-level note asks for confirmation', /needs? your confirmation/.test(result.notes.join(' ')), result.notes.join(' / '))
+}
+
+{
+  // The same four bookings with consistent spellings must be clean, so the new
+  // check cannot just be flagging everything.
+  const segments = [
+    seg({ origin: 'MUMBAI CENTRAL', destination: 'PANVEL', transportMode: 'train', departureAt: '2026-11-14T08:00:00', arrivalAt: '2026-11-14T09:15:00' }),
+    seg({ origin: 'PANVEL', destination: 'ALIBAG', transportMode: 'bus', departureAt: '2026-11-14T11:15:00', arrivalAt: '2026-11-14T12:45:00' }),
+    seg({ transportMode: 'hotel', operator: 'Alibaug Resort', departureAt: '2026-11-14T13:45:00', arrivalAt: '2026-11-16T11:00:00' }),
+    seg({ origin: 'Alibag', destination: 'Mumbai', transportMode: 'flight', departureAt: '2026-11-16T18:40:00', arrivalAt: '2026-11-16T19:15:00' }),
+  ]
+
+  const result = buildItinerary(segments)
+  check(
+    'with matching spellings the same trip is clean',
+    result.confident === true,
+    routeOf(result.segments) + ' :: ' + result.segments.map((s) => s.reviewNote ?? '-').join(' / '),
+  )
+  check(
+    '  and the order is train, bus, hotel, flight',
+    result.segments.map((s) => s.transportMode).join(',') === 'train,bus,hotel,flight',
+    result.segments.map((s) => s.transportMode).join(','),
+  )
+  check('  nothing is flagged out of sequence', !result.segments.some((s) => s.reviewReason === 'out_of_sequence'))
+}
+
+{
+  // A genuine round trip is NOT out of sequence: it ends where it started.
+  const segments = [
+    seg({ origin: 'Delhi', destination: 'Mumbai', transportMode: 'flight', departureAt: '2026-11-14T08:00:00', arrivalAt: '2026-11-14T10:00:00' }),
+    seg({ origin: 'Mumbai', destination: 'Delhi', transportMode: 'flight', departureAt: '2026-11-18T20:00:00', arrivalAt: '2026-11-18T21:30:00' }),
+  ]
+  const result = buildItinerary(segments)
+  check('a real round trip is not flagged out of sequence', result.confident === true, result.segments.map((s) => String(s.reviewReason)).join(','))
+}
+
 const failed = results.filter((r) => !r.p)
 console.log(`\n${results.length - failed.length}/${results.length} passed`)
 if (failed.length) {

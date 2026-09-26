@@ -1,7 +1,32 @@
 # The trip hierarchy
 
-Wayvo groups the journeys you are taking into **trips**. A trip is the parent;
-each journey inside it is a **booking**.
+Wayvo has **two separate ways in**, and they are deliberately not merged:
+
+| | **Import a Booking** | **+ Add Trip** |
+| --- | --- | --- |
+| You want | one booking you already have | a whole itinerary |
+| You give it | **one** PDF or **one** image | a name, then **any number** of PDFs and images |
+| It creates | **one** journey | **one** trip containing many bookings |
+| It orders | nothing — there is one leg | every booking, automatically |
+| Where it lives | `/journeys` | `/journeys` → then into the trip |
+
+Both write to the same real database. Neither is a shortcut for the other:
+
+```
+Import a Booking          + Add Trip
+     │                         │
+     │  one file               │  name first, then many files
+     ▼                         ▼
+ ONE journey              Extract every document
+                              │
+                              ▼
+                         Normalise, match, order
+                              │
+                              ▼
+                         ONE complete trip
+```
+
+A trip is the parent; each journey inside it is a **booking**.
 
 ```
 profiles
@@ -21,6 +46,16 @@ Goa Vacation
 You never create or order those four yourself. You add the bookings — by
 uploading the tickets you already have, or by typing one in — and Wayvo works out
 the sequence.
+
+## The single-booking path
+
+"Import a Booking" writes the booking straight onto the `trips` row, because
+there is nothing to order — a trip with one leg is just that journey. No
+`journey_segments` are created. The uploaded document is linked to the same row,
+so the evidence is still attached.
+
+That is the same behaviour as before trips existed, and it is deliberately
+unchanged: importing one ticket should not make you name a trip first.
 
 ## Where things live
 
@@ -60,6 +95,16 @@ that already succeeded are `if not exists` and will simply be skipped.
 Until `0004` has been run, `/journeys` says so plainly rather than showing an
 empty list that would look like data loss.
 
+## Adding several bookings at once
+
+Inside a trip, "Upload tickets" accepts any number of files — PDFs, photos, or a
+mix. Each one is read, extracted, stored and saved as its own booking, and only
+then is the itinerary rebuilt **once for the whole set**. So the order reflects
+every document together, not the order you happened to select them in.
+
+One unreadable file does not abandon the rest: the result names every file and
+says plainly which were not added and why.
+
 ## How the order is worked out
 
 `src/lib/itineraryBuilder.ts`. It is pattern matching over what was actually read
@@ -69,9 +114,18 @@ off the tickets — not a model, and nothing is invented.
    previous one arrived.
 2. **A place that is only ever a starting point is the beginning.** A round trip
    has none, so the earliest departure is used.
-3. **Fall back to departure time** when the chain cannot be formed.
-4. **Connection time** is the gap between arriving on one booking and leaving on
+3. **Events are slotted in by time.** A hotel has a check-in and a check-out but
+   no route, so it cannot be chained onto a leg. It goes into the gap it belongs
+   in — after the bus that arrives before the check-in — which also makes the
+   connection time between them come out right.
+4. **Fall back to departure time** when the chain cannot be formed at all.
+5. **Connection time** is the gap between arriving on one booking and leaving on
    the next.
+6. **The result is checked against the clock.** A chain can break silently: if
+   one ticket prints "ALIBAG" and another "Alibaug", the stops do not match, the
+   walk starts from the wrong end, and every individual link still looks valid.
+   An order that runs backwards in time is therefore reported rather than
+   presented as the answer.
 
 Place names are compared after stripping decoration, so `Mumbai (BOM)`,
 `MUMBAI`, `Mumbai Airport` and `Pune Junction` / `PUNE` all chain correctly. The
@@ -89,6 +143,7 @@ but it is flagged and the traveller is asked to confirm:
 | `gap` | This booking does not continue from the one before it |
 | `overlap` | It leaves before the previous booking arrives |
 | `no_time` | A time was missing, so the connection cannot be checked |
+| `out_of_sequence` | Placed before a booking that leaves earlier, so the order may be wrong |
 
 Once confirmed, the booking is pinned: a later import will not rearrange it.
 

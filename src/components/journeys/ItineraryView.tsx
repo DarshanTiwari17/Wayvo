@@ -44,7 +44,7 @@ export function ItineraryView({ tripId, rows, itinerary, onConfirmOrder, onMove,
         ) : (
           <Pill tone="success">
             <Check size={12} strokeWidth={3} aria-hidden="true" />
-            Order confirmed
+            In order
           </Pill>
         )}
       </div>
@@ -65,7 +65,9 @@ export function ItineraryView({ tripId, rows, itinerary, onConfirmOrder, onMove,
           if (!row) return null
 
           const isLast = index === segments.length - 1
-          const connection = segment.connectionMinutes
+          // The mark below this card describes the wait into the NEXT booking,
+          // which is the next segment's connection — not this one's.
+          const connection = isLast ? null : segments[index + 1].connectionMinutes
 
           return (
             <li key={segment.id} className="flex flex-col">
@@ -76,10 +78,7 @@ export function ItineraryView({ tripId, rows, itinerary, onConfirmOrder, onMove,
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-2 font-display text-[16px] font-semibold tracking-tight text-app-text">
                       <TransportGlyph mode={segment.transportMode} />
-                      <span className="truncate">
-                        {segment.origin ?? 'Origin not read'}
-                        {segment.destination ? ` → ${segment.destination}` : ''}
-                      </span>
+                      <span className="truncate">{segmentTitle(segment)}</span>
                     </p>
 
                     <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-app-text-muted">
@@ -147,19 +146,17 @@ export function ItineraryView({ tripId, rows, itinerary, onConfirmOrder, onMove,
         })}
       </ol>
 
-      {flagged.length > 0 && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button onClick={onConfirmOrder} pending={confirming} pendingLabel="Saving…">
-            <Check size={14} strokeWidth={2.6} aria-hidden="true" />
-            Confirm this order
-          </Button>
-          <p className="wva-meta max-w-md">
-            {confident
-              ? 'Confirming tells Wayvo the order is right so a later booking will not rearrange it.'
-              : 'Check the flagged bookings above, then confirm. You can still change the order afterwards.'}
-          </p>
-        </div>
-      )}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button onClick={onConfirmOrder} pending={confirming} pendingLabel="Saving…">
+          <Check size={14} strokeWidth={2.6} aria-hidden="true" />
+          Confirm this order
+        </Button>
+        <p className="wva-meta max-w-md">
+          {confident
+            ? 'Confirming tells Wayvo the order is right, so a later booking will not rearrange it.'
+            : 'Check the flagged bookings above, then confirm. You can still change the order afterwards.'}
+        </p>
+      </div>
     </section>
   )
 }
@@ -176,14 +173,31 @@ function TimingRow({ segment }: { segment: Itinerary['segments'][number] }) {
     )
   }
 
+  // A hotel is checked into and out of, not departed from and arrived at.
+  const isStay = segment.transportMode === 'hotel'
+
   return (
     <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-app-text-muted">
       <Clock size={13} strokeWidth={2} aria-hidden="true" />
-      {segment.departureAt && <span>Departs {formatWhen(segment.departureAt)}</span>}
+      {segment.departureAt && <span>{isStay ? 'Check-in' : 'Departs'} {formatWhen(segment.departureAt)}</span>}
       {segment.departureAt && segment.arrivalAt && <span aria-hidden="true">·</span>}
-      {segment.arrivalAt && <span>Arrives {formatWhen(segment.arrivalAt)}</span>}
+      {segment.arrivalAt && <span>{isStay ? 'Check-out' : 'Arrives'} {formatWhen(segment.arrivalAt)}</span>}
     </p>
   )
+}
+
+/**
+ * The headline for one booking.
+ *
+ * A hotel has no route, so it is named after the property rather than showing
+ * "Origin not read", which is a complaint about the document rather than
+ * something the traveller needs to see.
+ */
+function segmentTitle(segment: Itinerary['segments'][number]): string {
+  if (segment.origin && segment.destination) return `${segment.origin} → ${segment.destination}`
+  if (segment.origin) return `From ${segment.origin}`
+  if (segment.destination) return `To ${segment.destination}`
+  return segment.operator ?? 'Booking'
 }
 
 function ConnectionMark({ minutes }: { minutes: number | null }) {

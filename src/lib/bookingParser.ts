@@ -513,8 +513,18 @@ export function extractJourneyFromText(rawText: string): ExtractionResult {
 
   // Departure and arrival are anchored to the nearest keyword, falling back to
   // document order.
-  const departureKeyword = text.search(/\b(depart(?:ure|ing|s)?|dep\b|onward|scheduled departure|boarding)\b/i)
-  const arrivalKeyword = text.search(/\b(arriv(?:al|ing|al|e|s)?|arr\b|due arrival|reaches?)\b/i)
+  //
+  // `check-?in` and `check-?out` are included because a hotel confirmation is a
+  // first-class booking in an itinerary, not a transport ticket: its check-in is
+  // the moment it starts and its check-out is when it ends. Without these the
+  // hotel's dates were only picked up by document order, which is luck rather
+  // than reading.
+  const departureKeyword = text.search(
+    /\b(depart(?:ure|ing|s)?|dep\b|onward|scheduled departure|boarding|check-?in(?:\s+date|\s+time)?)\b/i,
+  )
+  const arrivalKeyword = text.search(
+    /\b(arriv(?:al|ing|al|e|s)?|arr\b|due arrival|reaches?|check-?out(?:\s+date|\s+time)?)\b/i,
+  )
 
   const departureDate =
     departureKeyword >= 0 ? (dates.find((d) => d.index >= departureKeyword) ?? dates[0]) : dates[0]

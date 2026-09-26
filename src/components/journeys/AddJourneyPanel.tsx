@@ -4,7 +4,14 @@ import { useAuth } from '../../hooks/useAuth'
 import { extractJourneyFromText, isUsableJourney } from '../../lib/bookingParser'
 import { readDocument, releaseOcr, describeAccepted, validateFile } from '../../services/documentReader'
 import { attachDocumentToTrip, uploadTravelDocument, type UploadedDocument } from '../../services/documentService'
-import { draftFromExtraction, findPotentialDuplicates, saveSegment, type JourneyDraft, type PotentialDuplicate } from '../../services/importService'
+import {
+  draftFromExtraction,
+  findPotentialDuplicates,
+  saveJourney,
+  saveSegment,
+  type JourneyDraft,
+  type PotentialDuplicate,
+} from '../../services/importService'
 import {
   attachmentToFile,
   beginGmailConnect,
@@ -53,15 +60,21 @@ type Stage =
     }
 
 type Props = {
-  /** The trip these bookings belong to. This panel never creates a trip. */
-  tripId: string
-  /** Used only to label the panel; the trip itself is the traveller'. */
-  tripName: string
+  /**
+   * 'single' → "Import a Booking": one document becomes one journey.
+   * 'trip'   → a booking added to an existing itinerary.
+   */
+  mode?: 'single' | 'trip'
+  /** Required in trip mode. This panel never creates the trip. */
+  tripId?: string
+  /** Used only to label the panel. */
+  tripName?: string
   onClose: () => void
-  onSaved: () => void
+  onSaved: () => void | Promise<void>
 }
 
-export function AddJourneyPanel({ tripId, tripName, onClose, onSaved }: Props) {
+export function AddJourneyPanel({ mode = 'single', tripId, tripName, onClose, onSaved }: Props) {
+  const isTrip = mode === 'trip' && Boolean(tripId)
   const { user } = useAuth()
   const [stage, setStage] = useState<Stage>({ kind: 'choose' })
   const [error, setError] = useState<string | null>(null)
@@ -123,7 +136,9 @@ export function AddJourneyPanel({ tripId, tripName, onClose, onSaved }: Props) {
     }
 
     const draft = draftFromExtraction(extraction.fields, extraction.provenance, 'upload', extraction.confidence)
-    const duplicates = await findPotentialDuplicates(tripId, draft)
+    // A single journey is not compared against a trip; only bookings within the
+    // same itinerary can be duplicates of each other.
+    const duplicates = isTrip ? await findPotentialDuplicates(tripId!, draft) : []
 
     setStage({
       kind: 'review',
@@ -229,7 +244,7 @@ export function AddJourneyPanel({ tripId, tripName, onClose, onSaved }: Props) {
       }
 
       const draft = draftFromExtraction(extraction.fields, extraction.provenance, 'gmail', extraction.confidence)
-      const duplicates = await findPotentialDuplicates(tripId, draft)
+      const duplicates = isTrip ? await findPotentialDuplicates(tripId!, draft) : []
 
       setStage({
         kind: 'review',
@@ -256,9 +271,15 @@ export function AddJourneyPanel({ tripId, tripName, onClose, onSaved }: Props) {
     setSaving(true)
     setError(null)
     try {
-      // The booking is a segment on the trip the traveller is looking at.
-      await saveSegment(tripId, draft, document?.id ?? null)
-      if (document) await attachDocumentToTrip(document.id, tripId)
+      if (isTrip) {
+        // A booking joins the itinerary the traveller is looking at.
+        await saveSegment(tripId!, draft, document?.id ?? null)
+        if (document) await attachDocumentToTrip(document.id, tripId!)
+      } else {
+        // "Import a Booking": one document becomes one journey.
+        const journey = await saveJourney(user.id, draft)
+        if (document) await attachDocumentToTrip(document.id, journey.id)
+      }
       onSaved()
       onClose()
     } catch (cause) {
@@ -321,10 +342,13 @@ export function AddJourneyPanel({ tripId, tripName, onClose, onSaved }: Props) {
   return (
     <section className="wva-card wva-card--pad mb-6">
       <header className="mb-5">
-        <h2 className="wva-h2">Add bookings to your trip</h2>
+        <h2 className="wva-h2">{isTrip ? 'Add a booking to your trip' : 'Import a booking'}</h2>
         <p className="wva-body mt-1.5">
-          {tripName ? `Adding to ${tripName}. ` : ''}Bring in a booking confirmation and Wayvo will read the travel
-          details for you. You can check everything before it is saved. Add as many as your trip needs.
+          {isTrip
+            ? `Adding to ${tripName}. `
+            : ''}
+          Bring in one booking confirmation — a PDF or a photo — and Wayvo will read the travel details for you. You can
+          check everything before it is saved.
         </p>
       </header>
 
@@ -408,7 +432,7 @@ export function AddJourneyPanel({ tripId, tripName, onClose, onSaved }: Props) {
             </span>
             <span className="wva-h3">Upload Ticket / PDF</span>
             <span className="text-[13px] leading-relaxed text-app-text-muted">
-              A train ticket, flight ticket, hotel booking or itinerary. {describeAccepted()}.
+              One train ticket, flight ticket, hotel booking or itinerary. {describeAccepted()}.
             </span>
           </button>
 

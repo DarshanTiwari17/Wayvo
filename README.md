@@ -66,6 +66,11 @@ Full setup, Google OAuth configuration and the live verification checklist:
 | `/forgot-password` | public only | Emails a real Supabase recovery link |
 | `/reset-password` | public only | Arrives from the email link; sets the new password |
 | `/dashboard` | **protected** | Redirects to `/login` when signed out |
+| `/journeys` | **protected** | Two separate actions: **Import a booking** (one file → one journey) and **+ Add trip** (name → many files → one itinerary) |
+| `/journeys/:id` | **protected** | One trip: add bookings in bulk, add one by hand, and see the order Wayvo worked out |
+| `/alerts` | **protected** | Disruptions on your trips |
+| `/recovery` | **protected** | Proposed recovery plans |
+| `/profile` | **protected** | Your account |
 | `/setup` | — | Rendered automatically when credentials are missing |
 
 ---
