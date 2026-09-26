@@ -28,5 +28,11 @@ export default defineConfig({
     // on the network, run `npm run dev -- --host` for that session rather than
     // committing the exposure to the config.
     port: 5173,
+    proxy: {
+      '/api/navigation': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+      },
+    },
   },
 })

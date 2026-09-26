@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.gmail-callback]
 verify_jwt = false
+
+[functions.navigation-route]
+verify_jwt = true

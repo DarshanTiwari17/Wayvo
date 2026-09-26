@@ -14,6 +14,7 @@ import { JourneysPage } from './pages/JourneysPage'
 import { TripPage } from './pages/TripPage'
 import { AlertsPage } from './pages/AlertsPage'
 import { RecoveryPage } from './pages/RecoveryPage'
+import { RecoveryNavigationPage } from './pages/RecoveryNavigationPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { SupabaseSetupPage } from './pages/SupabaseSetupPage'
@@ -98,6 +99,8 @@ export function App() {
             <Route path="/journeys/:id" element={<TripPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/recovery" element={<RecoveryPage />} />
+            <Route path="/navigation" element={<RecoveryNavigationPage />} />
+            <Route path="/recovery/navigation" element={<RecoveryNavigationPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
 
