@@ -64,5 +64,10 @@ verify_jwt = true
 [functions.gmail-extract]
 verify_jwt = true
 
+[functions.wayvo-travel-chat]
+# Let unauthenticated OPTIONS preflights reach the function. The POST handler
+# validates the caller's Supabase JWT itself before reading any user data.
+verify_jwt = false
+
 [functions.gmail-callback]
 verify_jwt = false

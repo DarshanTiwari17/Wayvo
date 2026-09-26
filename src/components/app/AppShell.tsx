@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { Bell, LayoutGrid, LogOut, Map, Menu, ShieldCheck, User, X } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { fetchOpenDisruptions } from '../../services/travelService'
+import { TravelChatWidget } from '../../features/travel-chat/TravelChatWidget'
 
 /**
  * Wayvo product shell — the single layout for every signed-in page.
@@ -119,6 +120,7 @@ export function AppShell() {
       <main className="wva-container pb-20 pt-8 sm:pt-10">
         <Outlet />
       </main>
+      <TravelChatWidget />
     </div>
   )
 }
