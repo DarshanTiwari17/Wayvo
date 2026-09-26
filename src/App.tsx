@@ -11,6 +11,7 @@ import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { JourneysPage } from './pages/JourneysPage'
+import { TripPage } from './pages/TripPage'
 import { AlertsPage } from './pages/AlertsPage'
 import { RecoveryPage } from './pages/RecoveryPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -94,6 +95,7 @@ export function App() {
           >
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/journeys" element={<JourneysPage />} />
+            <Route path="/journeys/:id" element={<TripPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/recovery" element={<RecoveryPage />} />
             <Route path="/profile" element={<ProfilePage />} />

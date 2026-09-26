@@ -5,21 +5,29 @@ The other needs a server-side function you deploy once.
 
 | Path | Needs | Status |
 | --- | --- | --- |
-| **Upload a PDF or photo** | `0003_journey_import.sql` | Works after the migration |
-| **Import from Gmail** | migration **+ Edge Functions + Google credentials** | Needs the steps below |
+| **Upload a PDF or photo** | `0003` + `0004` migrations | Works after the migrations |
+| **Import from Gmail** | migrations **+ Edge Functions + Google credentials** | Needs the steps below |
+
+Both paths add a **booking** to a **trip**. See
+[TRIP-HIERARCHY.md](TRIP-HIERARCHY.md) for how the parent/child relationship and
+the automatic ordering work.
 
 Nothing here is faked. If Gmail is not set up, the button says so plainly and
 points the traveller back to uploading a ticket.
 
 ---
 
-## 1. Run the migration
+## 1. Run the migrations
 
-Supabase Dashboard → **SQL Editor** → run:
+Supabase Dashboard → **SQL Editor** → run, in order:
 
 ```
 supabase/migrations/0003_journey_import.sql
+supabase/migrations/0004_trip_hierarchy.sql
 ```
+
+`0004` turns `journey_segments` into the bookings of a trip. Without it the
+Journeys page says *"Trips aren't set up on this project yet"*.
 
 This is additive; your existing data and auth are untouched. It creates:
 
@@ -30,8 +38,12 @@ This is additive; your existing data and auth are untouched. It creates:
 - a private Storage bucket `travel-documents` (10 MB cap, PDFs and images only)
 - Storage RLS keyed on the first path segment, which is the caller's UUID
 
-Until it is applied, the Journeys page says *"Journey importing isn't set up on
-this project yet"* instead of showing an empty list.
+`0004` adds the rest: per-booking provenance and confidence, the computed
+`seq`, `connection_minutes`, and the `needs_review` / `review_note`
+columns that let Wayvo ask instead of guessing.
+
+Until they are applied, the Journeys page says *"Trips aren't set up on this
+project yet"* instead of showing an empty list.
 
 ### Redirect / bucket notes
 
@@ -165,14 +177,17 @@ fetched after the traveller picks that specific email.
 
 ## How the traveller imports from Gmail
 
-1. **Import from Gmail** → Google's consent screen.
+1. Open the trip, then **Import a booking** → **Import from Gmail** →
+   Google's consent screen.
 2. Wayvo searches Gmail and lists matches: sender, subject, date, a short
    snippet. No message bodies.
 3. **Import journey** on a match → Wayvo reads that one message, prefers an
    attached PDF or image over the email body, and extracts the fields.
 4. The review screen shows exactly what was read, with a ✓ next to each value
    that came from the document and ⚠ next to anything inferred.
-5. **Confirm & add journey** writes it to Supabase.
+5. **Confirm & add journey** writes it to Supabase as a booking of that trip.
+6. Wayvo rebuilds the itinerary and shows where the new booking fits, flagging
+   anything it is unsure about.
 
 ---
 
@@ -205,7 +220,7 @@ npm run test:functions   # every function parses and handles its failure modes
 
 ## Duplicates
 
-Before saving, Wayvo looks for a journey you already have:
+Before saving, Wayvo looks for a booking you already added to **this trip**:
 
 1. matching **PNR**
 2. matching **booking reference** or ticket number
@@ -229,5 +244,5 @@ matched. You can then import anyway or open the existing journey.
 | "That file type isn't supported" | Anything that is not a PDF or an image |
 | "We couldn't read this document" | A scanned PDF with no text layer, or a very blurry photo |
 | "We couldn't find enough travel information" | A receipt, or a document with no route/date/mode |
-| "Journeys aren't set up on this project yet" | `0003_journey_import.sql` has not been run |
+| "Trips aren't set up on this project yet" | `0003` and/or `0004` have not been run |
 | OCR is slow or stalls on images | Tesseract downloads its language data on first use; the first scan is slower, later ones are cached |

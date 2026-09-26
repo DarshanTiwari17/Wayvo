@@ -14,17 +14,24 @@ identity on screen comes from Supabase `auth.users` and `public.profiles`.
 ```bash
 npm install
 
-# 1. run the schema (Supabase Dashboard -> SQL Editor)
+# 1. run the schema, in order (Supabase Dashboard -> SQL Editor)
 #    supabase/migrations/0001_profiles.sql
+#    supabase/migrations/0002_travel.sql
+#    supabase/migrations/0003_journey_import.sql
+#    supabase/migrations/0004_trip_hierarchy.sql
 
 # 2. add credentials
-cp .env.example .env.local       # then paste your project URL + anon key
+cp .env.example .env             # then paste your project URL + anon key
 
 # 3. go
 npm run dev
 ```
 
-Without `.env.local` the app renders a **Supabase is not configured** screen
+Put them in `.env`, not `.env.local`: Vite loads `.env.local` **in
+preference** to `.env`, so a stray `.env.local` silently overrides the values
+below and the app will talk to the wrong project.
+
+Without any credentials the app renders a **Supabase is not configured** screen
 rather than a login form that cannot work.
 
 Full setup, Google OAuth configuration and the live verification checklist:
@@ -42,6 +49,8 @@ Full setup, Google OAuth configuration and the live verification checklist:
 | `npm run typecheck` | Types only |
 | `npm run test` | All three suites below |
 | `npm run test:parser` | 67 assertions against the booking extractor |
+| `npm run test:itinerary` | 68 assertions on ordering, connections and ambiguity |
+| `npm run test:migrations` | Every migration adds a column before using it, and is safe to re-run |
 | `npm run test:gmail` | Signed OAuth `state`, open-redirect guard, candidate hints |
 | `npm run test:functions` | Every Edge Function parses and handles its failure modes |
 
@@ -87,7 +96,8 @@ src/
 ├── components/
 │   ├── auth/                  the reference login design system (glass)
 │   ├── app/                   the product design system (light, minimal)
-│   ├── journeys/              import panel, review screen, journey card
+│   ├── journeys/              import panel, review screen, itinerary view,
+│   │                           trip card, manual booking form
 │   └── routing/               ProtectedRoute / PublicOnlyRoute / RouteLoader
 ├── pages/                     one file per route
 └── types/database.ts          Supabase-generated schema types
@@ -96,8 +106,10 @@ supabase/
 ├── migrations/
 │   ├── 0001_profiles.sql          profiles + RLS + signup trigger
 │   ├── 0002_travel.sql            trips, disruptions, recovery_plans + RLS
-│   └── 0003_journey_import.sql    import columns, segments, documents,
-│                                   gmail_connections, Storage bucket + RLS
+│   ├── 0003_journey_import.sql    import columns, segments, documents,
+│   │                               gmail_connections, Storage bucket + RLS
+│   └── 0004_trip_hierarchy.sql   segments as bookings of a trip: provenance,
+│                                   confidence, computed order, review flags
 └── functions/                 Deno Edge Functions (hold the Google secret)
     ├── config.toml            per-function verify_jwt; deploy with
     │                          `supabase functions deploy <name>`

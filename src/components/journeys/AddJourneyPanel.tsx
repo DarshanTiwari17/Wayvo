@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { extractJourneyFromText, isUsableJourney } from '../../lib/bookingParser'
 import { readDocument, releaseOcr, describeAccepted, validateFile } from '../../services/documentReader'
 import { attachDocumentToTrip, uploadTravelDocument, type UploadedDocument } from '../../services/documentService'
-import { draftFromExtraction, findPotentialDuplicates, saveJourney, type JourneyDraft, type PotentialDuplicate } from '../../services/importService'
+import { draftFromExtraction, findPotentialDuplicates, saveSegment, type JourneyDraft, type PotentialDuplicate } from '../../services/importService'
 import {
   attachmentToFile,
   beginGmailConnect,
@@ -52,9 +52,16 @@ type Stage =
       duplicates: PotentialDuplicate[]
     }
 
-type Props = { onClose: () => void; onSaved: () => void }
+type Props = {
+  /** The trip these bookings belong to. This panel never creates a trip. */
+  tripId: string
+  /** Used only to label the panel; the trip itself is the traveller'. */
+  tripName: string
+  onClose: () => void
+  onSaved: () => void
+}
 
-export function AddJourneyPanel({ onClose, onSaved }: Props) {
+export function AddJourneyPanel({ tripId, tripName, onClose, onSaved }: Props) {
   const { user } = useAuth()
   const [stage, setStage] = useState<Stage>({ kind: 'choose' })
   const [error, setError] = useState<string | null>(null)
@@ -115,8 +122,8 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
       console.warn('Document storage failed:', cause)
     }
 
-    const draft = draftFromExtraction(extraction.fields, extraction.provenance, 'upload')
-    const duplicates = await findPotentialDuplicates(user.id, draft)
+    const draft = draftFromExtraction(extraction.fields, extraction.provenance, 'upload', extraction.confidence)
+    const duplicates = await findPotentialDuplicates(tripId, draft)
 
     setStage({
       kind: 'review',
@@ -221,8 +228,8 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
         }
       }
 
-      const draft = draftFromExtraction(extraction.fields, extraction.provenance, 'gmail')
-      const duplicates = await findPotentialDuplicates(user.id, draft)
+      const draft = draftFromExtraction(extraction.fields, extraction.provenance, 'gmail', extraction.confidence)
+      const duplicates = await findPotentialDuplicates(tripId, draft)
 
       setStage({
         kind: 'review',
@@ -249,8 +256,9 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
     setSaving(true)
     setError(null)
     try {
-      const trip = await saveJourney(user.id, draft)
-      if (document) await attachDocumentToTrip(document.id, trip.id)
+      // The booking is a segment on the trip the traveller is looking at.
+      await saveSegment(tripId, draft, document?.id ?? null)
+      if (document) await attachDocumentToTrip(document.id, tripId)
       onSaved()
       onClose()
     } catch (cause) {
@@ -276,15 +284,13 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
         {stage.duplicates.length > 0 && (
           <div className="mb-4">
             <Banner tone="warn">
-              <p className="font-semibold">This journey may already exist in Wayvo.</p>
+              <p className="font-semibold">This booking is already in this trip.</p>
               <p className="mt-1">
                 We found{' '}
-                {stage.duplicates
-                  .map((duplicate) => `"${duplicate.trip.title}" (${duplicate.reason})`)
-                  .join(', ')}
+                {stage.duplicates.map((duplicate) => `"${duplicate.label}" (${duplicate.reason})`).join(', ')}
                 .
               </p>
-              <p className="mt-1.5">You can import it anyway, or close this and open the existing journey.</p>
+              <p className="mt-1.5">You can add it anyway, or close this and open the booking that is already there.</p>
             </Banner>
           </div>
         )}
@@ -315,10 +321,10 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
   return (
     <section className="wva-card wva-card--pad mb-6">
       <header className="mb-5">
-        <h2 className="wva-h2">Add a journey</h2>
+        <h2 className="wva-h2">Add bookings to your trip</h2>
         <p className="wva-body mt-1.5">
-          Bring in a booking confirmation and Wayvo will read the travel details for you. You can check everything before
-          it is saved.
+          {tripName ? `Adding to ${tripName}. ` : ''}Bring in a booking confirmation and Wayvo will read the travel
+          details for you. You can check everything before it is saved. Add as many as your trip needs.
         </p>
       </header>
 

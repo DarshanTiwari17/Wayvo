@@ -88,6 +88,9 @@ export interface Database {
           source: JourneySource
           field_provenance: Json | null
           import_payload: Json | null
+          // Trip hierarchy, added by 0004_trip_hierarchy.sql
+          itinerary_built_at: string | null
+          segment_count: number
         }
         Insert: {
           id?: string
@@ -118,6 +121,8 @@ export interface Database {
           source?: JourneySource
           field_provenance?: Json | null
           import_payload?: Json | null
+          itinerary_built_at?: string | null
+          segment_count?: number
         }
         Update: {
           id?: string
@@ -148,6 +153,8 @@ export interface Database {
           source?: JourneySource
           field_provenance?: Json | null
           import_payload?: Json | null
+          itinerary_built_at?: string | null
+          segment_count?: number
         }
         Relationships: []
       }
@@ -252,11 +259,26 @@ export interface Database {
           ticket_number: string | null
           created_at: string
           updated_at: string
+          // Trip hierarchy, added by 0004_trip_hierarchy.sql
+          document_id: string | null
+          passenger_name: string | null
+          fare_amount: number | null
+          fare_currency: string | null
+          booking_status: string | null
+          source: JourneySource
+          confidence: number | null
+          field_provenance: Json | null
+          import_payload: Json | null
+          status: TripStatus
+          connection_minutes: number | null
+          needs_review: boolean
+          review_note: string | null
+          sequence_confirmed: boolean
         }
         Insert: {
           id?: string
           trip_id: string
-          seq: number
+          seq?: number
           origin?: string | null
           destination?: string | null
           departure_at?: string | null
@@ -272,6 +294,20 @@ export interface Database {
           ticket_number?: string | null
           created_at?: string
           updated_at?: string
+          document_id?: string | null
+          passenger_name?: string | null
+          fare_amount?: number | null
+          fare_currency?: string | null
+          booking_status?: string | null
+          source?: JourneySource
+          confidence?: number | null
+          field_provenance?: Json | null
+          import_payload?: Json | null
+          status?: TripStatus
+          connection_minutes?: number | null
+          needs_review?: boolean
+          review_note?: string | null
+          sequence_confirmed?: boolean
         }
         Update: {
           id?: string
@@ -291,6 +327,20 @@ export interface Database {
           terminal?: string | null
           ticket_number?: string | null
           updated_at?: string
+          document_id?: string | null
+          passenger_name?: string | null
+          fare_amount?: number | null
+          fare_currency?: string | null
+          booking_status?: string | null
+          source?: JourneySource
+          confidence?: number | null
+          field_provenance?: Json | null
+          import_payload?: Json | null
+          status?: TripStatus
+          connection_minutes?: number | null
+          needs_review?: boolean
+          review_note?: string | null
+          sequence_confirmed?: boolean
         }
         Relationships: []
       }
@@ -393,8 +443,14 @@ export type TripUpdate = Database['public']['Tables']['trips']['Update']
 export type Disruption = Database['public']['Tables']['disruptions']['Row']
 export type RecoveryPlan = Database['public']['Tables']['recovery_plans']['Row']
 export type JourneySegment = Database['public']['Tables']['journey_segments']['Row']
+export type JourneySegmentInsert = Database['public']['Tables']['journey_segments']['Insert']
+export type JourneySegmentUpdate = Database['public']['Tables']['journey_segments']['Update']
 export type JourneyDocument = Database['public']['Tables']['journey_documents']['Row']
 
-/** The columns the app selects for a journey. */
+/** The columns the app selects for a trip. */
 export const TRIP_COLUMNS =
-  'id, profile_id, title, origin, destination, status, starts_on, ends_on, created_at, updated_at, transport_mode, operator_name, service_number, departure_at, arrival_at, booking_reference, pnr, ticket_number, passenger_name, seat, coach, terminal, fare_amount, fare_currency, booking_status, source, field_provenance, import_payload'
+  'id, profile_id, title, origin, destination, status, starts_on, ends_on, created_at, updated_at, transport_mode, operator_name, service_number, departure_at, arrival_at, booking_reference, pnr, ticket_number, passenger_name, seat, coach, terminal, fare_amount, fare_currency, booking_status, source, field_provenance, import_payload, itinerary_built_at, segment_count'
+
+/** Everything the itinerary builder needs to order a trip's bookings. */
+export const SEGMENT_COLUMNS =
+  'id, trip_id, seq, origin, destination, departure_at, arrival_at, transport_mode, operator_name, service_number, booking_reference, pnr, passenger_name, seat, coach, terminal, fare_amount, fare_currency, booking_status, source, confidence, status, connection_minutes, needs_review, review_note, sequence_confirmed, document_id'
