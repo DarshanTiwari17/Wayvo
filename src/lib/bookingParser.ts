@@ -30,6 +30,11 @@ export interface ExtractedJourney {
   serviceNumber: string | null
   origin: string | null
   destination: string | null
+  /**
+   * The city a booking is in. Only meaningful for a hotel, which has a location
+   * but no route; for transport it stays null rather than being invented.
+   */
+  city: string | null
   departureDate: string | null
   departureTime: string | null
   arrivalDate: string | null
@@ -63,6 +68,7 @@ const EMPTY: ExtractedJourney = {
   serviceNumber: null,
   origin: null,
   destination: null,
+  city: null,
   departureDate: null,
   departureTime: null,
   arrivalDate: null,
@@ -113,10 +119,43 @@ function cleanPlace(value: string): string {
   return words.join(' ').trim()
 }
 
-function isNoise(value: string): boolean {
+/**
+ * Words that appear in confirmations but are never part of a place name.
+ *
+ * A hotel confirmation is mostly prose — "Your booking is confirmed", "We look
+ * forward to welcoming you", "Guest Details" — and a labelled route pattern will
+ * happily capture a sentence if nothing stops it. These are rejected outright.
+ */
+const NOT_A_PLACE = new Set([
+  'welcome', 'welcoming', 'booked', 'booking', 'confirmed', 'confirmation',
+  'thank', 'thanks', 'looking', 'forward', 'guest', 'guests', 'detail', 'details',
+  'information', 'contact', 'support', 'cancel', 'cancellation', 'refund',
+  'policy', 'policies', 'term', 'terms', 'condition', 'conditions', 'note',
+  'important', 'please', 'dear', 'regards', 'sincerely', 'best', 'wish',
+  'enjoy', 'stay', 'stays', 'visit', 'travel', 'travels', 'journey', 'reservation',
+  'reservations', 'itinerary', 'total', 'amount', 'paid', 'price', 'fare',
+])
+
+/**
+ * Whether a candidate string can plausibly be a place.
+ *
+ * Deliberately strict. A real stop is one to four capitalised words with no
+ * promotional vocabulary; anything longer or boilerplate-laden is prose, and
+ * rejecting it costs far less than showing a sentence as a station.
+ */
+function looksLikePlace(value: string): boolean {
   const v = value.trim()
-  if (v.length < 3 || v.length > 48) return true
-  return /^(valid|ticket|booking|pnr|seat|class|platform|gate|taxes|sls?|not|nrs?)$/i.test(v)
+  if (v.length < 2 || v.length > 40) return false
+  if (!/[A-Z]/.test(v)) return false
+
+  const words = v.toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  if (words.length === 0 || words.length > 4) return false
+  if (words.some((word) => NOT_A_PLACE.has(word))) return false
+
+  // A place is not a sentence: no sentence-ending punctuation mid-string.
+  if (/[.!?]./.test(v)) return false
+
+  return true
 }
 
 /** "MUMBAI CENTRAL" -> "Mumbai Central", but "PNR" stays uppercase. */
@@ -180,6 +219,10 @@ function findTimes(text: string): { hm: string; index: number }[] {
   const found: { hm: string; index: number }[] = []
 
   for (const m of text.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g)) {
+    // A bare "HH:MM" that is actually followed by "PM" is not a 24-hour time.
+    // Without this skip it is recorded as the 12-hour reading and, because it
+    // shares an index with the corrected version, sorts ahead of it.
+    if (/^\s*(am|pm)\b/i.test(text.slice(m.index! + m[0].length))) continue
     found.push({ hm: `${m[1].padStart(2, '0')}:${m[2]}`, index: m.index! })
   }
   // "7.10 AM", "19:45 hrs"
@@ -220,7 +263,7 @@ function findRoute(text: string): { origin: string | null; destination: string |
   if (from && to) {
     const origin = titleish(from[1])
     const destination = titleish(to[1])
-    if (!isNoise(origin) && !isNoise(destination) && origin !== destination) {
+    if (looksLikePlace(origin) && looksLikePlace(destination) && origin !== destination) {
       return { origin, destination }
     }
   }
@@ -237,7 +280,7 @@ function findRoute(text: string): { origin: string | null; destination: string |
     if (!m) continue
     const origin = titleish(m[1])
     const destination = titleish(m[2])
-    if (!isNoise(origin) && !isNoise(destination) && origin !== destination) {
+    if (looksLikePlace(origin) && looksLikePlace(destination) && origin !== destination) {
       return { origin, destination }
     }
   }
@@ -245,11 +288,11 @@ function findRoute(text: string): { origin: string | null; destination: string |
   // Only one endpoint is labelled: keep what is known rather than guessing.
   if (from) {
     const origin = titleish(from[1])
-    if (!isNoise(origin)) return { origin, destination: null }
+    if (looksLikePlace(origin)) return { origin, destination: null }
   }
   if (to) {
     const destination = titleish(to[1])
-    if (!isNoise(destination)) return { origin: null, destination }
+    if (looksLikePlace(destination)) return { origin: null, destination }
   }
 
   // Two IATA codes in order, but only near airport wording.
@@ -380,6 +423,61 @@ function findTransport(text: string): {
   return { mode: null, serviceNumber: null, operator: null }
 }
 
+/**
+ * The parts of a hotel booking that are not a route.
+ *
+ * Returns the property name, its city, and the check-in / check-out pair. The
+ * check-in is the moment the stay begins, so it maps onto the departure slot
+ * and the check-out onto arrival — which is what lets a hotel sit in an
+ * itinerary between two transport legs.
+ */
+function findHotel(text: string): {
+  name: string | null
+  city: string | null
+  checkIn: { date: string | null; time: string | null }
+  checkOut: { date: string | null; time: null | string }
+} {
+  const name = text.match(/\b([A-Z][A-Za-z&.' -]{3,40}?(?:Hotel|Resort|Inn|House|Marriott|Hilton|Hyatt|Ibis|Lodge|Villa)\b)/)
+
+  // The city is read from an explicit label when there is one, otherwise from
+  // the line the property name sits on.
+  const labelledCity = text.match(/\b(?:location|city|town|area)\s*[:#-]?\s*([A-Z][A-Za-z.' -]{2,30})/i)
+  const city = labelledCity ? titleish(labelledCity[1]) : null
+
+  const checkIn = text.match(/\bcheck-?in\s*(?:date|time)?\s*[:#-]?\s*([\d]{1,2}[\s-/.]+[A-Za-z]{3,9}[\s-/.]+\d{2,4})[\s,]*(\d{1,2}[.:]\d{2}\s*(?:am|pm)?)?/i)
+  const checkOut = text.match(/\bcheck-?out\s*(?:date|time)?\s*[:#-]?\s*([\d]{1,2}[\s-/.]+[A-Za-z]{3,9}[\s-/.]+\d{2,4})[\s,]*(\d{1,2}[.:]\d{2}\s*(?:am|pm)?)?/i)
+
+  return {
+    name: name ? titleish(name[1]) : null,
+    city,
+    checkIn: { date: checkIn ? toIsoDate(checkIn[1]) : null, time: checkIn?.[2] ? toTime(checkIn[2]) : null },
+    checkOut: { date: checkOut ? toIsoDate(checkOut[1]) : null, time: checkOut?.[2] ? toTime(checkOut[2]) : null },
+  }
+}
+
+/** "27 Sep 2026" / "27-Sep-26" -> "2026-09-27", or null. */
+function toIsoDate(raw: string): string | null {
+  const m = raw.match(/(\d{1,2})[\s-/.]+([A-Za-z]{3,9})[\s-/.]+(\d{2,4})/)
+  if (!m) return null
+  const month = MONTHS[m[2].toLowerCase()]
+  if (month === undefined) return null
+  let year = Number(m[3])
+  if (m[3].length === 2) year += year < 70 ? 2000 : 1900
+  return isoDate(year, month, Number(m[1]))
+}
+
+/** "01:45 PM" -> "13:45", "11:00 AM" -> "11:00". */
+function toTime(raw: string): string | null {
+  const m = raw.match(/(\d{1,2})[.:](\d{2})\s*(am|pm)?/i)
+  if (!m) return null
+  let hour = Number(m[1])
+  const mer = (m[3] ?? '').toLowerCase()
+  if (mer === 'pm' && hour < 12) hour += 12
+  if (mer === 'am' && hour === 12) hour = 0
+  if (hour > 23) return null
+  return `${String(hour).padStart(2, '0')}:${m[2]}`
+}
+
 function findSeat(text: string): { seat: string | null; coach: string | null; terminal: string | null } {
   const seat = text.match(/\bseat\s*(?:no\.?|number)?\s*[:#-]?\s*(\d{1,2}[A-K]?)\b/i)
   const coach = text.match(/\b(?:coach|carriage|compartment|car)\s*(?:no\.?|number)?\s*[:#-]?\s*([A-Z]{1,2}\s?-?\d{1,3})\b/i)
@@ -487,8 +585,20 @@ export function extractJourneyFromText(rawText: string): ExtractionResult {
 
   const dates = findDates(text)
   const times = findTimes(text)
-  const route = findRoute(text)
   const transport = findTransport(text)
+
+  // A hotel has no origin, destination, departure station or arrival station.
+  // Reading a route off one is what produced "origin: Welcoming You", so route
+  // extraction only runs when the document actually is a transport ticket.
+  const isTransport =
+    transport.mode === 'train' ||
+    transport.mode === 'bus' ||
+    transport.mode === 'flight' ||
+    transport.mode === 'car' ||
+    transport.mode === 'ferry'
+  const route = isTransport ? findRoute(text) : { origin: null, destination: null }
+  const hotel = transport.mode === 'hotel' ? findHotel(text) : null
+
   const ids = findPnr(text)
   const seating = findSeat(text)
   const fare = findFare(text)
@@ -498,7 +608,8 @@ export function extractJourneyFromText(rawText: string): ExtractionResult {
   fields.destination = mark('destination', route.destination)
   fields.transportMode = mark('transportMode', transport.mode)
   fields.serviceNumber = mark('serviceNumber', transport.serviceNumber)
-  fields.operator = mark('operator', transport.operator)
+  // For a hotel the property name is the meaningful "operator".
+  fields.operator = mark('operator', transport.mode === 'hotel' ? hotel?.name ?? transport.operator : transport.operator)
   fields.pnr = mark('pnr', ids.pnr)
   fields.bookingReference = mark('bookingReference', ids.reference)
   fields.seat = mark('seat', seating.seat)
@@ -510,6 +621,29 @@ export function extractJourneyFromText(rawText: string): ExtractionResult {
   fields.traveler = mark('traveler', who.traveler)
   fields.passengers = who.passengers
   prov.passengers = who.passengers.length > 0 ? 'confirmed' : 'missing'
+
+  // A hotel's location is its city, and its check-in / check-out are the moments
+  // the stay begins and ends. Mapping them onto the departure / arrival slots
+  // is what lets a hotel sit between two transport legs in the itinerary.
+  if (transport.mode === 'hotel') {
+    fields.city = mark('city', hotel?.city ?? null)
+    if (hotel?.checkIn.date) {
+      fields.departureDate = hotel.checkIn.date
+      prov.departureDate = 'confirmed'
+    }
+    if (hotel?.checkIn.time) {
+      fields.departureTime = hotel.checkIn.time
+      prov.departureTime = 'confirmed'
+    }
+    if (hotel?.checkOut.date) {
+      fields.arrivalDate = hotel.checkOut.date
+      prov.arrivalDate = 'confirmed'
+    }
+    if (hotel?.checkOut.time) {
+      fields.arrivalTime = hotel.checkOut.time
+      prov.arrivalTime = 'confirmed'
+    }
+  }
 
   // Departure and arrival are anchored to the nearest keyword, falling back to
   // document order.

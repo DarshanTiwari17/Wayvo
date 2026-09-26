@@ -27,6 +27,10 @@ export function ItineraryView({ tripId, rows, itinerary, onConfirmOrder, onMove,
   const { segments, notes, confident } = itinerary
   const byId = new Map(rows.map((row) => [row.id, row]))
   const flagged = segments.filter((segment) => segment.needsReview)
+  // Once every booking has been confirmed the order is locked. The button must
+  // say so — otherwise a successful confirm looks like nothing happened, because
+  // the label is unchanged.
+  const allConfirmed = segments.every((segment) => segment.sequenceConfirmed)
 
   if (segments.length === 0) return null
 
@@ -147,14 +151,23 @@ export function ItineraryView({ tripId, rows, itinerary, onConfirmOrder, onMove,
       </ol>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button onClick={onConfirmOrder} pending={confirming} pendingLabel="Saving…">
-          <Check size={14} strokeWidth={2.6} aria-hidden="true" />
-          Confirm this order
-        </Button>
+        {allConfirmed ? (
+          <Pill tone="success">
+            <Check size={14} strokeWidth={2.6} aria-hidden="true" />
+            Order confirmed
+          </Pill>
+        ) : (
+          <Button onClick={onConfirmOrder} pending={confirming} pendingLabel="Saving…">
+            <Check size={14} strokeWidth={2.6} aria-hidden="true" />
+            Confirm this order
+          </Button>
+        )}
         <p className="wva-meta max-w-md">
-          {confident
-            ? 'Confirming tells Wayvo the order is right, so a later booking will not rearrange it.'
-            : 'Check the flagged bookings above, then confirm. You can still change the order afterwards.'}
+          {allConfirmed
+            ? 'This order is saved. You can still move a booking if something looks wrong.'
+            : confident
+              ? 'Confirming tells Wayvo the order is right, so a later booking will not rearrange it.'
+              : 'Check the flagged bookings above, then confirm. You can still change the order afterwards.'}
         </p>
       </div>
     </section>

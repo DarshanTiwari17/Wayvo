@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Upload } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { getSupabase } from '../lib/supabase'
@@ -29,6 +29,7 @@ export function TripPage() {
   const { id = '' } = useParams()
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [trip, setTrip] = useState<Trip | null>(null)
   const [rows, setRows] = useState<JourneySegment[]>([])
@@ -41,6 +42,18 @@ export function TripPage() {
   // worth of tickets, not one at a time.
   const [showImport, setShowImport] = useState(false)
   const [showManual, setShowManual] = useState(false)
+
+  // "+ Add Trip" hands off to this page with ?upload=1, so the traveller lands on
+  // the upload step directly instead of having to find the button themselves.
+  // The parameter is consumed and cleared, so a later reload keeps the panel open
+  // without the URL advertising it.
+  useEffect(() => {
+    if (searchParams.get('upload') !== '1') return
+    setShowImport(true)
+    const params = new URLSearchParams(searchParams)
+    params.delete('upload')
+    setSearchParams(params, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const load = useCallback(async () => {
     if (!id) return
@@ -125,7 +138,25 @@ export function TripPage() {
     setError(null)
     try {
       await saveSegmentOrder(id, next)
-      await handleChanged()
+
+      // Reflect the traveller's order at once. The builder treats a confirmed
+      // order as authoritative, so this is the source of truth rather than a
+      // temporary visual that the next rebuild would discard.
+      setItinerary((current) => {
+        if (!current) return current
+        const byId = new Map(current.segments.map((segment) => [segment.id, segment]))
+        const reordered = next
+          .map((segmentId, position) => {
+            const segment = byId.get(segmentId)
+            return segment
+              ? { ...segment, seq: position, sequenceConfirmed: true, needsReview: false, reviewNote: null }
+              : null
+          })
+          .filter((segment): segment is NonNullable<typeof segment> => segment !== null)
+        return { ...current, segments: reordered, confident: true }
+      })
+
+      await load()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'We could not move that booking.')
     } finally {

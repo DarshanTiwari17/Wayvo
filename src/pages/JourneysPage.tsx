@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Map as MapIcon, Plus, Upload, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useJourneys } from '../hooks/useTravelData'
 import { isJourneyPast } from '../services/travelService'
 import { createTripRecord } from '../services/importService'
+import type { Trip } from '../types/database'
 import { AddJourneyPanel } from '../components/journeys/AddJourneyPanel'
 import { Banner, Button, Card, EmptyState, Field, PageHeader, SkeletonLines } from '../components/app/Primitives'
 import { JourneyCard } from '../components/journeys/JourneyCard'
@@ -21,6 +22,7 @@ export function JourneysPage() {
   const { user } = useAuth()
   const journeys = useJourneys(user?.id)
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
 
   const formOpen = searchParams.get('new') === '1'
   // "Import a Booking" is a separate, first-class action — one document, one
@@ -75,9 +77,11 @@ export function JourneysPage() {
       {formOpen && (
         <CreateTripForm
           onCancel={() => setFlag('new', false)}
-          onCreated={() => {
+          onCreated={(trip) => {
             setFlag('new', false)
-            journeys.reload()
+            // Land on the new trip with the upload panel already open, so the
+            // traveller goes straight from naming it to adding bookings.
+            navigate(`/journeys/${trip.id}?upload=1`)
           }}
         />
       )}
@@ -171,7 +175,7 @@ export function JourneysPage() {
 
 /* -------------------------------------------------------------------------- */
 
-type CreateFormProps = { onCancel: () => void; onCreated: () => void }
+type CreateFormProps = { onCancel: () => void; onCreated: (trip: Trip) => void }
 
 /**
  * "Create your trip" — names the parent container. The journeys go in after.
@@ -201,8 +205,8 @@ function CreateTripForm({ onCancel, onCreated }: CreateFormProps) {
     setError(undefined)
     setPending(true)
     try {
-      await createTripRecord(user.id, trimmed)
-      onCreated()
+      const trip = await createTripRecord(user.id, trimmed)
+      onCreated(trip)
     } catch (cause) {
       setFormError(cause instanceof Error ? cause.message : 'We could not create that trip. Please try again.')
       setPending(false)

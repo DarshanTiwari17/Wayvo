@@ -351,6 +351,7 @@ function toExtracted(draft: JourneyDraft): ExtractedJourney {
     serviceNumber: draft.serviceNumber,
     origin: draft.origin,
     destination: draft.destination,
+    city: null,
     departureDate: draft.startsOn,
     departureTime: draft.departureAt ? draft.departureAt.slice(11, 16) : null,
     arrivalDate: draft.endsOn,

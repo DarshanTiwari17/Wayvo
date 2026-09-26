@@ -420,14 +420,16 @@ const routeOf = (segments: { origin: string | null; destination: string | null }
 }
 
 /* =========================================================================
- * 15. A chain can break silently, and the dates catch it
+ * 15. A place-name mismatch must not break the order
  *
- * If one ticket prints "ALIBAG" and another "Alibaug", the two stops do not
- * match. The walk then finds only one place that is never a destination, starts
- * from the wrong end, and produces an order that runs backwards in time — with
- * every individual link looking perfectly valid.
+ * If one ticket prints "ALIBAG" and another "Alibaug", the stops do not match.
+ * An earlier version of the sorter chained on location alone, so it started from
+ * the wrong end and produced a confidently backwards itinerary.
  *
- * This is a real failure found by a real multi-file test, so it is pinned here.
+ * Ordering is now driven by time, which every document shares, so the same four
+ * bookings come out in the right order whether or not the spellings agree. The
+ * mismatch is still visible if you look for it, but it no longer corrupts the
+ * sequence.
  * ====================================================================== */
 {
   // Deliberately inconsistent spellings, exactly as two tickets would print them.
@@ -440,29 +442,18 @@ const routeOf = (segments: { origin: string | null; destination: string | null }
 
   const result = buildItinerary(segments)
 
-  // The chain starts from Alibaug because that is the only place never seen as a
-  // destination, so the return flight is placed first. Every link is "valid"
-  // in isolation, which is exactly why the date check is needed.
   check(
-    'a broken chain does NOT claim to be confident',
-    result.confident === false,
+    'a place-name mismatch no longer breaks the order',
+    result.confident === true,
     routeOf(result.segments) + ' :: ' + result.segments.map((s) => s.reviewNote ?? '-').join(' / '),
   )
   check(
-    'the backwards booking is flagged',
-    result.segments.some((s) => s.reviewReason === 'out_of_sequence'),
-    result.segments.map((s) => String(s.reviewReason)).join(','),
+    '  the order is train, bus, hotel, flight',
+    result.segments.map((s) => s.transportMode).join(',') === 'train,bus,hotel,flight',
+    result.segments.map((s) => s.transportMode).join(','),
   )
-  check(
-    '  and the traveller is told to check it',
-    result.segments.some((s) => /may be wrong/.test(s.reviewNote ?? '')),
-    result.segments.map((s) => s.reviewNote ?? '-').join(' / '),
-  )
-  check('  and it is not mistaken for an overlap', !result.segments.some((s) => s.reviewReason === 'overlap'))
-
-  // Every booking is still listed — the itinerary is usable, just not certain.
+  check('  nothing is flagged', result.segments.every((s) => !s.needsReview))
   check('  all four bookings are still shown', result.segments.length === 4, String(result.segments.length))
-  check('  the trip-level note asks for confirmation', /needs? your confirmation/.test(result.notes.join(' ')), result.notes.join(' / '))
 }
 
 {
@@ -497,6 +488,64 @@ const routeOf = (segments: { origin: string | null; destination: string | null }
   ]
   const result = buildItinerary(segments)
   check('a real round trip is not flagged out of sequence', result.confident === true, result.segments.map((s) => String(s.reviewReason)).join(','))
+}
+
+/* =========================================================================
+ * 16. A manual reorder must survive a rebuild
+ *
+ * The traveller can move bookings up and down. Once they do, that order is
+ * theirs: the automatic sorter must not run again and put everything back.
+ * This is the bug behind "the Up/Down buttons do nothing" — the move was
+ * persisted, then the next rebuild re-derived the order and undid it.
+ * ====================================================================== */
+{
+  const seg = (over: Partial<SegmentInput>): SegmentInput => ({
+    id: Math.random().toString(36).slice(2),
+    origin: null, destination: null, departureAt: null, arrivalAt: null,
+    transportMode: null, operator: null, serviceNumber: null,
+    bookingReference: null, pnr: null, passengerName: null, seat: null,
+    coach: null, terminal: null, fareAmount: null, fareCurrency: null,
+    bookingStatus: null, source: 'upload', confidence: 0.9, ...over,
+  })
+
+  const train = seg({ origin: 'Mumbai Central', destination: 'Panvel', transportMode: 'train', departureAt: '2026-11-14T08:00:00', arrivalAt: '2026-11-14T09:15:00' })
+  const bus = seg({ origin: 'Panvel', destination: 'Alibaug', transportMode: 'bus', departureAt: '2026-11-14T11:15:00', arrivalAt: '2026-11-14T12:45:00' })
+  const hotel = seg({ transportMode: 'hotel', operator: 'Alibaug Beach Resort', departureAt: '2026-11-14T13:45:00', arrivalAt: '2026-11-16T11:00:00' })
+
+  // The automatic order.
+  const auto = buildItinerary([train, bus, hotel])
+  check('the automatic order is train, bus, hotel',
+    auto.segments.map((s) => s.transportMode).join(',') === 'train,bus,hotel',
+    auto.segments.map((s) => s.transportMode).join(','))
+
+  // The traveller moves the hotel above the bus and confirms. saveSegmentOrder
+  // is what persists this: it rewrites seq and marks the rows confirmed.
+  const moved = [auto.segments[0], auto.segments[2], auto.segments[1]].map((segment, position) => ({
+    ...segment,
+    seq: position,
+    sequenceConfirmed: true,
+  }))
+
+  const rebuilt = buildItinerary(moved)
+  check('a confirmed manual order survives the rebuild',
+    rebuilt.segments.map((s) => s.transportMode).join(',') === 'train,hotel,bus',
+    rebuilt.segments.map((s) => s.transportMode).join(','))
+  check('  and the sequence values are the traveller\'s',
+    rebuilt.segments.map((s) => s.seq).join(',') === '0,1,2',
+    rebuilt.segments.map((s) => s.seq).join(','))
+  check('  and nothing is flagged for review',
+    rebuilt.segments.every((s) => !s.needsReview),
+    rebuilt.segments.map((s) => String(s.reviewReason)).join(','))
+
+  // Moving it back must work too — the confirmation is not a one-way lock.
+  const movedBack = [rebuilt.segments[0], rebuilt.segments[2], rebuilt.segments[1]].map((segment, position) => ({
+    ...segment,
+    seq: position,
+  }))
+  const rebuiltAgain = buildItinerary(movedBack)
+  check('moving a booking back also survives',
+    rebuiltAgain.segments.map((s) => s.transportMode).join(',') === 'train,bus,hotel',
+    rebuiltAgain.segments.map((s) => s.transportMode).join(','))
 }
 
 const failed = results.filter((r) => !r.p)

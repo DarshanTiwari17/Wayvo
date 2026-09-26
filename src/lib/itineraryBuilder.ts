@@ -43,6 +43,11 @@ export interface SegmentInput {
   confidence: number | null
   /** True once the traveller has accepted the order for this segment. */
   sequenceConfirmed?: boolean
+  /**
+   * The sequence stored against this booking. Only meaningful once
+   * `sequenceConfirmed` is set; until then the sorter assigns the order.
+   */
+  seq?: number
 }
 
 export type ReviewReason =
@@ -107,7 +112,7 @@ const PARENTHETICAL = /\(([^)]*)\)/g
  * are equal, so this errs towards "not the same place" and lets the caller
  * flag the ambiguity.
  */
-function normalisePlace(raw: string | null | undefined): string | null {
+export function normalisePlace(raw: string | null | undefined): string | null {
   if (!raw) return null
 
   let value = raw.toLowerCase().trim()
@@ -150,109 +155,25 @@ function byDeparture(a: SegmentInput, b: SegmentInput): number {
 }
 
 /* ==========================================================================
- * The chain walk
+ * Ordering
  * ========================================================================== */
 
 /**
- * Walks the bookings into a route.
+ * The automatic order.
  *
- * `remaining` is consumed as we go. Returns the order plus why any booking had
- * to be placed by guesswork.
+ * Time is the primary key, because it is the one signal every document shares:
+ * a departure for a transport booking, a check-in for a stay. Sorting on it means
+ * the itinerary reflects when things actually happen rather than the order the
+ * documents happened to be uploaded in.
+ *
+ * Location continuity is then used to validate the result — see the gap and
+ * branch checks in `buildItinerary` — rather than to drive it, so a chain that
+ * does not line up is reported instead of being forced.
  */
-function chain(remaining: SegmentInput[]): {
-  ordered: SegmentInput[]
-  reasons: Map<string, ReviewReason>
-} {
-  const reasons = new Map<string, ReviewReason>()
-  const pool = [...remaining].sort(byDeparture)
-  const used = new Set<string>()
-  const ordered: SegmentInput[] = []
-
-  const take = (segment: SegmentInput) => {
-    ordered.push(segment)
-    used.add(segment.id)
-  }
-
-  /* --- where does the route start? ------------------------------------
-   * A place that some booking leaves from, and no booking arrives at, is a
-   * real starting point. A round trip has none, so fall back to the earliest
-   * departure.
-   * ------------------------------------------------------------------- */
-  const destinations = new Set(
-    pool.map((segment) => normalisePlace(segment.destination)).filter(Boolean) as string[],
-  )
-
-  const starts = pool.filter((segment) => {
-    const origin = normalisePlace(segment.origin)
-    if (!origin) return false
-    return !destinations.has(origin)
-  })
-
-  let current: string | null = null
-
-  if (starts.length === 1) {
-    current = normalisePlace(starts[0].origin)
-  } else if (starts.length > 1) {
-    // Two bookings leave from somewhere nothing arrives at — genuinely
-    // ambiguous. Earliest departure is the most defensible guess.
-    for (const segment of starts) reasons.set(segment.id, 'branch')
-    current = normalisePlace(starts[0].origin)
-  } else {
-    // A closed loop (Delhi → Mumbai → Delhi). Start at the earliest departure.
-    current = null
-  }
-
-  /* --- walk the chain --------------------------------------------------- */
-  let progress = true
-
-  while (progress) {
-    progress = false
-
-    if (current === null) {
-      // No anchor yet: take the earliest unplaced booking and start there.
-      const next = pool.find((segment) => !used.has(segment.id))
-      if (!next) break
-      take(next)
-      current = normalisePlace(next.destination)
-      progress = true
-      continue
-    }
-
-    const matches = pool.filter(
-      (segment) => !used.has(segment.id) && normalisePlace(segment.origin) === current,
-    )
-
-    if (matches.length === 1) {
-      take(matches[0])
-      current = normalisePlace(matches[0].destination)
-      progress = true
-      continue
-    }
-
-    if (matches.length > 1) {
-      // Two bookings leave the same place. Ordering by time is the best we can
-      // do, and it is worth saying so.
-      for (const match of matches) reasons.set(match.id, 'branch')
-      const next = matches.sort(byDeparture)[0]
-      take(next)
-      current = normalisePlace(next.destination)
-      progress = true
-      continue
-    }
-
-    // Nothing leaves from here. Either we have arrived at the end of the route,
-    // or there is a hole in it.
-    const leftovers = pool.filter((segment) => !used.has(segment.id))
-    if (leftovers.length === 0) break
-
-    const next = leftovers.sort(byDeparture)[0]
-    reasons.set(next.id, 'gap')
-    take(next)
-    current = normalisePlace(next.destination)
-    progress = true
-  }
-
-  return { ordered, reasons }
+function chronologicalOrder(segments: SegmentInput[]): SegmentInput[] {
+  const legs = segments.filter((segment) => !isEvent(segment))
+  const events = segments.filter((segment) => isEvent(segment))
+  return mergeEvents([...legs].sort(byDeparture), [...events].sort(byDeparture))
 }
 
 /* ==========================================================================
@@ -327,12 +248,17 @@ export function buildItinerary(segments: SegmentInput[]): Itinerary {
     return { segments: [], confident: true, notes }
   }
 
-  // Chain the legs, then slot the events into the gaps by time.
-  const legs = segments.filter((segment) => !isEvent(segment))
-  const events = segments.filter((segment) => isEvent(segment))
+  // Once the traveller has confirmed an order it is theirs; the automatic
+  // sorter must not run again and undo it. Otherwise order by when each booking
+  // starts, slotting hotels and other non-transport bookings into the gap they
+  // belong in.
+  const allConfirmed =
+    segments.length > 0 &&
+    segments.every((segment) => segment.sequenceConfirmed && typeof segment.seq === 'number')
 
-  const { ordered: chained, reasons } = chain(legs)
-  const ordered = mergeEvents(chained, events)
+  const ordered = allConfirmed
+    ? [...segments].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    : chronologicalOrder(segments)
 
   /* --- connection times and the remaining flags ------------------------- */
   const result: OrderedSegment[] = ordered.map((segment, index) => {
@@ -345,15 +271,48 @@ export function buildItinerary(segments: SegmentInput[]): Itinerary {
       connectionMinutes = Math.round((departure - arrival) / 60000)
     }
 
-    let needsReview = reasons.has(segment.id)
-    let reviewReason: ReviewReason | null = reasons.get(segment.id) ?? null
+    let needsReview = false
+    let reviewReason: ReviewReason | null = null
     let reviewNote: string | null = null
 
-    // A booking whose location could not be read cannot be chained at all.
+    // A booking whose location could not be read cannot be placed by route.
     // Events are exempt: a hotel is not supposed to have a route.
     if (!isEvent(segment) && (!normalisePlace(segment.origin) || !normalisePlace(segment.destination))) {
       needsReview = true
       reviewReason = 'no_location'
+    }
+
+    // More than one booking leaves from the same place: genuinely
+    // ambiguous. Checked before the gap test, because two bookings from one
+    // origin to two destinations are a branch even though the first one's
+    // destination does not match the second one's origin.
+    if (!isEvent(segment) && !reviewNote) {
+      const sharedOrigin = ordered
+        .slice(0, index)
+        .filter(
+          (other) =>
+            !isEvent(other) &&
+            normalisePlace(other.origin) &&
+            normalisePlace(other.origin) === normalisePlace(segment.origin),
+        )
+      if (sharedOrigin.length > 0) {
+        needsReview = true
+        reviewReason = 'branch'
+        reviewNote = 'More than one booking leaves from here, so we could not be sure of the order.'
+      }
+    }
+
+    // Location continuity (2C): the previous booking must have arrived where
+    // this one departs from. If it did not, the chain is broken — report it
+    // rather than forcing a connection the document does not support.
+    if (!isEvent(segment) && previous && !isEvent(previous) && !reviewNote) {
+      const arrived = normalisePlace(previous.destination)
+      const departs = normalisePlace(segment.origin)
+      if (arrived && departs && arrived !== departs) {
+        needsReview = true
+        reviewReason = 'gap'
+        reviewNote = 'This booking does not continue from the one before it, so its place in the trip is a guess.'
+      }
     }
 
     // Departing before the previous booking arrives is impossible, and worth
@@ -373,17 +332,10 @@ export function buildItinerary(segments: SegmentInput[]): Itinerary {
       reviewNote = 'This booking appears to leave before the one before it arrives. Please check the times.'
     }
 
-    // The order also has to make sense in time. A chain can break silently:
-    // if one ticket prints "ALIBAG" and another "Alibaug", the two stops do not
-    // match, the walk starts at the wrong end, and the result is confidently
-    // backwards in time. A backwards sequence is a signal that something did
-    // not line up, so it is reported rather than presented as the answer.
-    const previousDeparture = index > 0 ? timeOf(ordered[index - 1].departureAt) : null
-    if (previousDeparture !== null && departure !== null && departure < previousDeparture) {
-      needsReview = true
-      reviewReason = 'out_of_sequence'
-      reviewNote = 'This booking is placed before one that leaves earlier, so the order may be wrong. Please check it.'
-    }
+    // The order is time-sorted, so a backwards sequence cannot occur. Equal
+    // times with different origins are the one case worth flagging, and that is
+    // caught by the branch check above.
+    void departure
 
     if (!reviewNote && connectionMinutes === null && index > 0) {
       // Not wrong, just not verifiable.
