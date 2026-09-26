@@ -10,9 +10,13 @@
     "typecheck": "tsc -b --noEmit",
     "test:parser": "esbuild scripts/test-booking-parser.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/parser.mjs --log-level=warning && node node_modules/.cache/parser.mjs",
     "test:itinerary": "esbuild scripts/test-itinerary.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/itinerary.mjs --log-level=warning && node node_modules/.cache/itinerary.mjs",
+    "test:impact": "esbuild scripts/test-impact.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/impact.mjs --log-level=warning && node node_modules/.cache/impact.mjs",
+    "test:railradar": "esbuild scripts/test-railradar.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/railradar.mjs --log-level=warning && node node_modules/.cache/railradar.mjs",
+    "test:refund-eligibility": "esbuild scripts/test-refund-eligibility.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/refund-eligibility.mjs --log-level=warning && node node_modules/.cache/refund-eligibility.mjs",
     "test:gmail": "esbuild scripts/test-gmail-flow.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/gmail-flow.mjs --log-level=warning && node node_modules/.cache/gmail-flow.mjs",
     "test:functions": "esbuild scripts/test-gmail-functions.ts --bundle --platform=node --format=esm --external:esbuild --outfile=node_modules/.cache/gmail-functions.mjs --log-level=warning && node node_modules/.cache/gmail-functions.mjs",
-    "test": "npm run test:migrations && npm run test:parser && npm run test:itinerary && npm run test:gmail && npm run test:functions",
+    "test:refund-policy": "esbuild scripts/test-refund-policy.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/refund-policy.mjs --log-level=warning && node node_modules/.cache/refund-policy.mjs",
+    "test": "npm run test:migrations && npm run test:parser && npm run test:itinerary && npm run test:impact && npm run test:railradar && npm run test:refund-eligibility && npm run test:gmail && npm run test:functions && npm run test:refund-policy",
     "test:migrations": "esbuild scripts/test-migrations.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/migrations.mjs --log-level=warning && node node_modules/.cache/migrations.mjs"
   },
   "dependencies": {

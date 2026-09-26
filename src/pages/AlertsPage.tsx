@@ -90,6 +90,11 @@ export function AlertsPage() {
                     </span>
                     <span className="wva-meta capitalize">· {alert.kind.replace(/_/g, ' ')}</span>
                   </p>
+                  {alert.trip_id && (
+                    <Link to={`/journeys/${alert.trip_id}`} className="wva-btn wva-btn--ghost wva-btn--sm mt-3 self-start">
+                      View affected journey
+                    </Link>
+                  )}
                 </article>
               </li>
             ))}

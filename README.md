@@ -19,6 +19,12 @@ npm install
 #    supabase/migrations/0002_travel.sql
 #    supabase/migrations/0003_journey_import.sql
 #    supabase/migrations/0004_trip_hierarchy.sql
+#    supabase/migrations/0005_refund_policy_foundation.sql
+#    supabase/migrations/0006_public_policy_library.sql
+#    supabase/migrations/0007_disruption_impact.sql
+#    supabase/migrations/0008_refund_evaluation_current.sql
+#    supabase/migrations/0009_railradar_monitoring.sql
+#    supabase/migrations/0010_railradar_train_identification.sql
 
 # 2. add credentials
 cp .env.example .env             # then paste your project URL + anon key
@@ -50,6 +56,7 @@ Full setup, Google OAuth configuration and the live verification checklist:
 | `npm run test` | All three suites below |
 | `npm run test:parser` | 67 assertions against the booking extractor |
 | `npm run test:itinerary` | 68 assertions on ordering, connections and ambiguity |
+| `npm run test:railradar` | Provider normalization, freshness, deduplication, impact and policy integration |
 | `npm run test:migrations` | Every migration adds a column before using it, and is safe to re-run |
 | `npm run test:gmail` | Signed OAuth `state`, open-redirect guard, candidate hints |
 | `npm run test:functions` | Every Edge Function parses and handles its failure modes |
@@ -123,6 +130,7 @@ supabase/
 ```
 
 Deploy and secrets: [`supabase/JOURNEY-IMPORT.md`](supabase/JOURNEY-IMPORT.md).
+RailRadar setup and scheduling: [`supabase/RAILRADAR-MONITORING.md`](supabase/RAILRADAR-MONITORING.md).
 
 ### Two design languages, on purpose
 

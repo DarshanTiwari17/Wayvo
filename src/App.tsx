@@ -17,6 +17,7 @@ import { RecoveryPage } from './pages/RecoveryPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { SupabaseSetupPage } from './pages/SupabaseSetupPage'
+import { PoliciesPage } from './pages/PoliciesPage'
 
 /**
  * Wayvo route map
@@ -84,6 +85,8 @@ export function App() {
             session exists and explains an expired link when one does not.
           */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/policies" element={<PoliciesPage />} />
+          <Route path="/policies/:id" element={<PoliciesPage />} />
 
           {/* ---------- signed-in product ---------- */}
           <Route

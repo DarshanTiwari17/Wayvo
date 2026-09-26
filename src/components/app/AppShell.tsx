@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, LayoutGrid, LogOut, Map, Menu, ShieldCheck, User, X } from 'lucide-react'
+import { Bell, BookOpen, LayoutGrid, LogOut, Map, Menu, ShieldCheck, User, X } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { fetchOpenDisruptions } from '../../services/travelService'
 
@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/journeys', label: 'Journeys', icon: Map },
   { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/recovery', label: 'Recovery', icon: ShieldCheck },
+  { to: '/policies', label: 'Policies', icon: BookOpen },
 ]
 
 export function AppShell() {

@@ -14,7 +14,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const MIGRATIONS = 'C:/Users/Lenovo/Desktop/HackCelestial/supabase/migrations'
+const MIGRATIONS = path.resolve(process.cwd(), 'supabase/migrations')
 
 const results: { n: string; p: boolean }[] = []
 const check = (n: string, p: boolean, d = '') => {
@@ -67,6 +67,9 @@ const files = fs
   .filter((name) => name.endsWith('.sql'))
   .sort()
 
+const known = new Map<string, Set<string>>()
+for (const [table, columns] of Object.entries(BASE_COLUMNS)) known.set(table, new Set(columns))
+
 check('migrations are present', files.length >= 4, `${files.length} files`)
 check('the trip hierarchy migration exists', files.includes('0004_trip_hierarchy.sql'))
 
@@ -97,10 +100,6 @@ for (const file of files) {
   const code = raw.replace(/--[^\n]*/g, '')
   const stmts = statements(code)
 
-  // Columns available per table, accumulated across the migration series.
-  const known = new Map<string, Set<string>>()
-  for (const [table, columns] of Object.entries(BASE_COLUMNS)) known.set(table, new Set(columns))
-
   /* --- pass 1: what does this file declare, and where? ------------------ */
   const addedAt = new Map<string, number>() // "table.column" -> statement index
   const addedHere = new Set<string>()
@@ -114,7 +113,12 @@ for (const file of files) {
       if (!known.has(table)) known.set(table, new Set())
       for (const part of body.split(',')) {
         const column = part.trim().match(/^(\w+)\s+(?:uuid|text|integer|boolean|numeric|char|timestamptz|date|jsonb|bigint)/i)
-        if (column) known.get(table)!.add(column[1])
+        if (column) {
+          known.get(table)!.add(column[1])
+          const key = `${table}.${column[1]}`
+          addedAt.set(key, index)
+          addedHere.add(key)
+        }
       }
     }
 
@@ -178,9 +182,9 @@ for (const file of files) {
   })
 
   check(
-    `${file}: constraints and indexes were found to check`,
-    references.length > 0 || file === '0001_profiles.sql',
-    `${references.length} reference(s)`,
+    `${file}: schema declarations were found to check`,
+    references.length > 0 || /add\s+column|create\s+table/i.test(code),
+    `${references.length} constraint/index reference(s)`,
   )
 
   for (const reference of references) {
@@ -194,6 +198,10 @@ for (const file of files) {
     if (BASE_COLUMNS[reference.table]?.has(reference.column)) continue
 
     if (!addedHere.has(key)) {
+      if (known.get(reference.table)?.has(reference.column)) {
+        check(`${file}: ${key} used by ${reference.kind} exists from an earlier migration`, true)
+        continue
+      }
       check(
         `${file}: ${key} used by ${reference.kind} is a real column`,
         false,
@@ -219,7 +227,10 @@ for (const file of files) {
   const doBlocks = code.match(/do \$\$[\s\S]*?\$\$;/gi) ?? []
   const codeWithoutBlocks = doBlocks.reduce((acc, block) => acc.replace(block, ' '), code)
   const guardedConstraints = new Set(
-    [...code.matchAll(/conname\s*=\s*'(\w+)'/gi)].map((m) => m[1]),
+    [
+      ...[...code.matchAll(/conname\s*=\s*'(\w+)'/gi)].map((m) => m[1]),
+      ...[...code.matchAll(/drop\s+constraint\s+if\s+exists\s+(\w+)/gi)].map((m) => m[1]),
+    ],
   )
 
   const alters = codeWithoutBlocks.match(/alter table[^;]*/gi) ?? []

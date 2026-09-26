@@ -40,6 +40,7 @@ export function LandingPage() {
           </Link>
           <nav aria-label="Main navigation">
             <a className="wayvo-landing__nav-link" href="#how-it-helps">How it helps</a>
+            <Link className="wayvo-landing__nav-link" to="/policies">Policy library</Link>
             <Link className="wayvo-landing__nav-login" to="/login">Log in</Link>
           </nav>
         </header>

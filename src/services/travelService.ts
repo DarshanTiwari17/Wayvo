@@ -11,7 +11,7 @@
  */
 import { getSupabase } from '../lib/supabase'
 import { TRIP_COLUMNS } from '../types/database'
-import type { Disruption, RecoveryPlan, Trip, TripInsert, TripStatus, TripUpdate } from '../types/database'
+import type { Disruption, DisruptionInsert, RecoveryPlan, Trip, TripInsert, TripStatus, TripUpdate } from '../types/database'
 
 /** Thrown when a query fails, so callers can decide how to surface it. */
 export class TravelDataError extends Error {
@@ -34,7 +34,8 @@ function toError(error: { message: string; code?: string }): TravelDataError {
   return new TravelDataError(error.message, error.code)
 }
 
-const DISRUPTION_COLUMNS = 'id, profile_id, trip_id, kind, severity, headline, detail, reported_at, resolved_at'
+const DISRUPTION_COLUMNS =
+  'id, profile_id, trip_id, segment_id, kind, severity, headline, detail, reported_at, resolved_at, delay_minutes, original_departure_at, original_arrival_at, revised_departure_at, revised_arrival_at, cancellation_at, provider_event_reference, source, created_at, updated_at'
 const RECOVERY_COLUMNS =
   'id, profile_id, trip_id, disruption_id, title, summary, total_cost, currency, status, created_at, updated_at'
 
@@ -98,6 +99,33 @@ export async function fetchOpenDisruptions(profileId: string): Promise<Disruptio
 
   if (error) throw toError(error)
   return data ?? []
+}
+
+export async function fetchTripDisruptions(tripId: string): Promise<Disruption[]> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from('disruptions')
+    .select(DISRUPTION_COLUMNS)
+    .eq('trip_id', tripId)
+    .order('reported_at', { ascending: false })
+
+  if (error) throw toError(error)
+  return data ?? []
+}
+
+export async function createDisruption(
+  profileId: string,
+  input: Omit<DisruptionInsert, 'profile_id'>,
+): Promise<Disruption> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from('disruptions')
+    .insert({ ...input, profile_id: profileId })
+    .select(DISRUPTION_COLUMNS)
+    .single()
+
+  if (error) throw toError(error)
+  return data
 }
 
 /* ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { ArrowLeft, Plus, Upload } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { getSupabase } from '../lib/supabase'
 import { TRIP_COLUMNS, type JourneySegment, type Trip } from '../types/database'
+import { calculateImpact } from '../services/impactService'
 import {
   confirmItinerary,
   fetchSegments,
@@ -12,11 +13,17 @@ import {
   saveSegmentOrder,
 } from '../services/importService'
 import type { Itinerary } from '../lib/itineraryBuilder'
-import { formatDateRange } from '../services/travelService'
+import { fetchTripDisruptions, formatDateRange, TravelDataError } from '../services/travelService'
 import { Banner, Button, Card, PageHeader, Pill, SkeletonLines } from '../components/app/Primitives'
 import { AddJourneyPanel } from '../components/journeys/AddJourneyPanel'
 import { ItineraryRouteSummary, ItineraryView } from '../components/journeys/ItineraryView'
 import { ManualSegmentForm } from '../components/journeys/ManualSegmentForm'
+import { DisruptionImpactView } from '../components/journeys/DisruptionImpactView'
+import { DisruptionSimulator } from '../components/journeys/DisruptionSimulator'
+import { RefundEligibilityView } from '../components/journeys/RefundEligibilityView'
+import { evaluateRefundEligibilityForDisruption, updatePassengerTravelStatus, type EligibilityEvaluation } from '../services/refundEligibilityService'
+import { chooseTrainCandidate, fetchTripMonitoringStates, fetchTripNotifications, MonitoringDataError } from '../services/railradarMonitoringService'
+import { LiveJourneyMonitoring } from '../components/journeys/LiveJourneyMonitoring'
 
 /**
  * Wayvo — /journeys/:id
@@ -32,6 +39,13 @@ export function TripPage() {
 
   const [trip, setTrip] = useState<Trip | null>(null)
   const [rows, setRows] = useState<JourneySegment[]>([])
+  const [disruptions, setDisruptions] = useState<Awaited<ReturnType<typeof fetchTripDisruptions>>>([])
+  const [monitoringStates, setMonitoringStates] = useState<Awaited<ReturnType<typeof fetchTripMonitoringStates>>>([])
+  const [notifications, setNotifications] = useState<Awaited<ReturnType<typeof fetchTripNotifications>>>([])
+  const [eligibility, setEligibility] = useState<EligibilityEvaluation | null>(null)
+  const [eligibilityLoading, setEligibilityLoading] = useState(false)
+  const [eligibilityError, setEligibilityError] = useState<string | null>(null)
+  const [travelStatusPending, setTravelStatusPending] = useState(false)
   const [itinerary, setItinerary] = useState<Itinerary | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading')
   const [error, setError] = useState<string | null>(null)
@@ -66,13 +80,38 @@ export function TripPage() {
     setTrip(tripRow as Trip)
 
     try {
-      const segments = await fetchSegments(id)
+      const [segments, tripDisruptions, trainStates, tripNotifications] = await Promise.all([
+        fetchSegments(id),
+        fetchTripDisruptions(id),
+        fetchTripMonitoringStates(id),
+        fetchTripNotifications(id),
+      ])
       setRows(segments)
+      setDisruptions(tripDisruptions)
+      setMonitoringStates(trainStates)
+      setNotifications(tripNotifications)
       const built = await rebuildItinerary(id)
       setItinerary(built)
+      const latest = tripDisruptions[0] ?? null
+      if (user && latest?.segment_id) {
+        setEligibilityLoading(true)
+        setEligibilityError(null)
+        try {
+          setEligibility(await evaluateRefundEligibilityForDisruption(user.id, id, latest.segment_id, latest.id))
+        } catch (cause) {
+          setEligibility(null)
+          setEligibilityError(cause instanceof Error ? cause.message : 'Refund eligibility could not be evaluated.')
+        } finally {
+          setEligibilityLoading(false)
+        }
+      } else {
+        setEligibility(null)
+      }
       setStatus('ready')
     } catch (cause) {
-      const missing = cause instanceof ImportError && /isn't set up/.test(cause.message)
+      const missing = (cause instanceof ImportError && /isn't set up/.test(cause.message)) ||
+        (cause instanceof TravelDataError && cause.isMissingTable) ||
+        (cause instanceof MonitoringDataError && cause.isMissingTable)
       setStatus(missing ? 'missing' : 'error')
       setError(cause instanceof Error ? cause.message : 'We could not load this trip.')
     }
@@ -131,6 +170,21 @@ export function TripPage() {
     }
   }
 
+  async function handleTravelStatusChange(status: JourneySegment['passenger_travel_status']) {
+    const affectedSegmentId = latestDisruption?.segment_id
+    if (!affectedSegmentId) return
+    setTravelStatusPending(true)
+    setError(null)
+    try {
+      await updatePassengerTravelStatus(id, affectedSegmentId, status)
+      await load()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Travel status could not be saved.')
+    } finally {
+      setTravelStatusPending(false)
+    }
+  }
+
   /* ---------------------------------------------------------------- */
 
   if (status === 'loading') {
@@ -151,8 +205,7 @@ export function TripPage() {
         <Banner tone="warn">
           <p className="font-semibold">Trips aren&rsquo;t set up on this project yet.</p>
           <p className="mt-1">
-            Run <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[12px]">0003_journey_import.sql</code> and{' '}
-            <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[12px]">0004_trip_hierarchy.sql</code> in the
+            Run the journey migrations through <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[12px]">0009_railradar_monitoring.sql</code> in the
             Supabase SQL editor, then reload.
           </p>
         </Banner>
@@ -193,6 +246,12 @@ export function TripPage() {
   }
 
   const bookingCount = rows.length
+  const latestDisruption = disruptions[0] ?? null
+  const orderedRows = (itinerary?.segments ?? []).flatMap((segment) => {
+    const row = rows.find((candidate) => candidate.id === segment.id)
+    return row ? [row] : []
+  })
+  const impact = calculateImpact(orderedRows, latestDisruption)
 
   return (
     <>
@@ -231,6 +290,24 @@ export function TripPage() {
         <div className="mb-5">
           <ItineraryRouteSummary itinerary={itinerary} />
         </div>
+      )}
+
+      {bookingCount > 0 && (
+        <LiveJourneyMonitoring
+          segments={rows}
+          states={monitoringStates}
+          notifications={notifications}
+          onTrainSelected={async (segmentId, trainNumber) => {
+            setError(null)
+            try {
+              await chooseTrainCandidate(segmentId, trainNumber)
+              await load()
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : 'The selected train could not be saved.')
+              throw cause
+            }
+          }}
+        />
       )}
 
       {/* ---- import: the working PDF/ticket path, unchanged in behaviour --- */}
@@ -307,6 +384,23 @@ export function TripPage() {
             </Button>
           </div>
         </div>
+      )}
+
+      <DisruptionImpactView impact={impact} disruption={latestDisruption} segments={rows} />
+
+      {eligibilityError && <div className="mt-6"><Banner tone="danger">{eligibilityError}</Banner></div>}
+      {eligibilityLoading && latestDisruption && <div className="mt-6"><Card><SkeletonLines rows={5} /></Card></div>}
+      {!eligibilityLoading && latestDisruption?.segment_id && (
+        <RefundEligibilityView
+          evaluation={eligibility}
+          segment={rows.find((row) => row.id === latestDisruption.segment_id) ?? null}
+          onTravelStatusChange={(status) => void handleTravelStatusChange(status)}
+          statusPending={travelStatusPending}
+        />
+      )}
+
+      {import.meta.env.DEV && user && bookingCount > 0 && (
+        <DisruptionSimulator profileId={user.id} tripId={trip.id} segments={rows} onCreated={() => void load()} />
       )}
 
       {!user && null}

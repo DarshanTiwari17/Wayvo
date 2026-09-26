@@ -53,6 +53,8 @@ file_size_limit = "10MiB"
 # calls through supabase-js. Only gmail-callback is exempt, because Google
 # redirects the browser there directly and no Supabase JWT is present; it is
 # authenticated by its signed, expiring `state` instead.
+# railradar is invoked by pg_cron, so its handler requires the separate
+# RAILRADAR_MONITORING_SECRET header and accepts no caller-supplied identifiers.
 # ---------------------------------------------------------------------------
 
 [functions.gmail-connect]
@@ -65,4 +67,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.gmail-callback]
+verify_jwt = false
+
+[functions.railradar]
 verify_jwt = false

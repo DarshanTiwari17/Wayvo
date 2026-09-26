@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { transform } from 'esbuild'
 
-const root = 'C:/Users/Lenovo/Desktop/HackCelestial/supabase/functions'
+const root = path.resolve(process.cwd(), 'supabase/functions')
 const results = []
 const check = (n, p, d = '') => {
   results.push({ n, p })
@@ -50,6 +50,7 @@ const expectations = [
   ['gmail-callback', ['denied', 'verifyState', 'refresh_token', 'exchangeCodeForTokens', 'safeReturnTo']],
   ['gmail-search', ['not_connected', 'reauth_required', 'refreshAccessToken', 'TRAVEL_QUERY', 'last_synced_at']],
   ['gmail-extract', ['not_connected', 'refreshAccessToken', 'findTravelAttachments', 'extractPlainText']],
+  ['railradar', ['x-monitor-secret', 'RAILRADAR_API_KEY', 'journey_segments', 'operational_fingerprint', 'monitoring_unavailable', 'journey_notifications']],
 ]
 
 for (const [name, needles] of expectations) {
@@ -76,13 +77,42 @@ for (const [name, needles] of expectations) {
 
 /* --- no secret or token may reach a browser bundle ---------------------- */
 {
-  const client = fs.readFileSync('C:/Users/Lenovo/Desktop/HackCelestial/src/services/gmailService.ts', 'utf8')
+  const client = fs.readFileSync(path.resolve(process.cwd(), 'src/services/gmailService.ts'), 'utf8')
   check('client never references the Google client secret', !client.includes('GOOGLE_CLIENT_SECRET'))
   check('client never references the service role key', !client.includes('SERVICE_ROLE'))
   check('client never puts a JWT in a URL', !/searchParams\.set\(\s*['"]session/.test(client))
   check('client never stores a refresh token', !/localStorage.*refresh/i.test(client))
   check('client selects only the safe columns', client.includes('profile_id, gmail_address, scopes, status, last_synced_at'))
   check('client does not select token columns', !/select\([^)]*refresh_token/.test(client))
+}
+
+{
+  const srcRoot = path.resolve(process.cwd(), 'src')
+  const sourceFiles = []
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name)
+      if (entry.isDirectory()) visit(absolute)
+      else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) sourceFiles.push(absolute)
+    }
+  }
+  visit(srcRoot)
+  const clientSource = sourceFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n')
+  check('RailRadar API key is absent from frontend source', !clientSource.includes('RAILRADAR_API_KEY'))
+  check('RailRadar scheduler secret is absent from frontend source', !clientSource.includes('RAILRADAR_MONITORING_SECRET'))
+  check('browser does not call RailRadar directly', !clientSource.includes('api.railradar.in'))
+  const migration = fs.readFileSync(path.resolve(process.cwd(), 'supabase/migrations/0009_railradar_monitoring.sql'), 'utf8')
+  check('monitoring snapshots are owner-scoped by RLS', /auth\.uid\(\)\) = profile_id/.test(migration))
+  check('notification reads are owner-scoped by RLS', /journey_notifications_select_own[\s\S]*?auth\.uid\(\)\) = profile_id/.test(migration))
+  const segmentMigration = fs.readFileSync(path.resolve(process.cwd(), 'supabase/migrations/0003_journey_import.sql'), 'utf8')
+  check('candidate selection relies on existing owner-scoped segment updates', /journey_segments_update_own[\s\S]*?auth\.uid\(\)/.test(segmentMigration))
+  const selectionService = fs.readFileSync(path.resolve(process.cwd(), 'src/services/railradarMonitoringService.ts'), 'utf8')
+  check('candidate selection accepts only a train saved in that segment snapshot', /state\?\.identification_status !== 'ambiguous'[\s\S]*?candidates\.find/.test(selectionService))
+  const appEnvPath = path.resolve(process.cwd(), '.env')
+  if (fs.existsSync(appEnvPath)) {
+    const appEnv = fs.readFileSync(appEnvPath, 'utf8')
+    check('browser .env contains no VITE-prefixed RailRadar key', !/^\s*VITE_RAILRADAR_API_KEY\s*=/m.test(appEnv))
+  }
 }
 
 const failed = results.filter((r) => !r.p)
