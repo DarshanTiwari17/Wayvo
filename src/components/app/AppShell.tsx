@@ -51,7 +51,6 @@ export function AppShell() {
   }, [user, location.pathname])
 
   const displayName = profile?.full_name?.trim() || user?.email || 'Traveller'
-  const firstName = displayName.split(/\s+/)[0] ?? displayName
 
   async function handleSignOut() {
     const result = await signOut()
@@ -86,7 +85,7 @@ export function AppShell() {
 
               <button
                 type="button"
-                className="wva-btn wva-btn--ghost wva-btn--sm lg:hidden"
+                className="wva-btn wva-btn--ghost wva-btn--sm min-[900px]:hidden"
                 onClick={() => setMobileNavOpen((open) => !open)}
                 aria-expanded={mobileNavOpen}
                 aria-controls="wayvo-mobile-nav"

@@ -962,8 +962,21 @@
   }
 
   .wva-btn:disabled {
-    opacity: 0.55;
     cursor: not-allowed;
+  }
+
+  /* A dimmed accent fill reads as "broken" rather than "not yet". Disabled
+     primary buttons fall back to a neutral surface instead. */
+  .wva-btn:disabled:not(.wva-btn--secondary):not(.wva-btn--danger) {
+    background: var(--color-app-surface-alt);
+    border-color: var(--color-app-border);
+    color: var(--color-app-text-subtle);
+    opacity: 1;
+  }
+
+  .wva-btn--secondary:disabled,
+  .wva-btn--danger:disabled {
+    opacity: 0.5;
   }
 
   .wva-btn--primary {

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchOpenDisruptions, fetchRecoveryPlans, fetchTrips, TravelDataError } from '../services/travelService'
-import type { Disruption, RecoveryPlan, Trip } from '../types/database'
 
 /**
  * Loads real rows from Supabase and reports three distinct outcomes:
@@ -21,6 +20,7 @@ type Query<T> = {
   reload: () => void
 }
 
+/** `T` is the row type, e.g. `Trip`. The loader returns a list of them. */
 function useQuery<T>(load: () => Promise<T[]>): Query<T> {
   const [rows, setRows] = useState<T[]>([])
   const [status, setStatus] = useState<Query<T>['status']>('loading')
@@ -61,13 +61,18 @@ function useQuery<T>(load: () => Promise<T[]>): Query<T> {
 }
 
 export function useJourneys(userId: string | undefined) {
-  return useQuery<Trip[]>(() => fetchTrips(userId as string))
+  // The loader must be referentially stable: `useQuery` keys its effect on it,
+  // so an inline arrow would re-run the effect on every render and never settle.
+  const load = useCallback(() => fetchTrips(userId as string), [userId])
+  return useQuery(load)
 }
 
 export function useOpenDisruptions(userId: string | undefined) {
-  return useQuery<Disruption[]>(() => fetchOpenDisruptions(userId as string))
+  const load = useCallback(() => fetchOpenDisruptions(userId as string), [userId])
+  return useQuery(load)
 }
 
 export function useRecoveryPlans(userId: string | undefined) {
-  return useQuery<RecoveryPlan[]>(() => fetchRecoveryPlans(userId as string))
+  const load = useCallback(() => fetchRecoveryPlans(userId as string), [userId])
+  return useQuery(load)
 }

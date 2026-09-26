@@ -1,27 +1,30 @@
 {
   "name": "wayvo",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "test:parser": "esbuild scripts/test-booking-parser.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/parser-test.mjs --log-level=warning && node node_modules/.cache/parser-test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",
     "lucide-react": "^0.542.0",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.1"
+    "react-router-dom": "^7.9.1",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.13",
-    "@types/node": "^26.6.3",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
+    "esbuild": "^0.25.10",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
     "vite": "^7.1.5"

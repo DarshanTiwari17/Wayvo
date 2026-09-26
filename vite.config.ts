@@ -24,19 +24,9 @@ export default defineConfig({
     },
   },
   server: {
-    // Bind all interfaces so the app can be opened from a phone or a second
-    // machine on the same network while testing.
-    //
-    // `allowedHosts` is deliberately an explicit list rather than `true`:
-    // `true` accepts any Host header, which leaves the dev server open to
-    // DNS-rebinding attacks. Add your own LAN address here when it changes.
-    host: true,
+    // Localhost only. If you need to reach the dev server from another device
+    // on the network, run `npm run dev -- --host` for that session rather than
+    // committing the exposure to the config.
     port: 5173,
-    allowedHosts: ['localhost', '127.0.0.1', '192.168.120.220', '10.46.232.204'],
-  },
-  preview: {
-    host: true,
-    port: 4173,
-    allowedHosts: ['localhost', '127.0.0.1', '192.168.120.220', '10.46.232.204'],
   },
 })

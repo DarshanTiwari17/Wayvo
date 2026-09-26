@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Camera, Mail, Phone, User } from 'lucide-react'
+import { Camera, Mail } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { Banner, Button, Card, Field, PageHeader, Pill, SectionTitle, SkeletonLines } from '../components/app/Primitives'
 
@@ -223,12 +223,6 @@ export function ProfilePage() {
           </div>
         </div>
       </Card>
-
-      <p className="mt-8 flex items-center justify-center gap-2 text-[12px] text-app-text-subtle">
-        <User size={13} strokeWidth={2} aria-hidden="true" />
-        Wayvo only ever shows you your own account.
-        <Phone size={0} aria-hidden="true" />
-      </p>
     </>
   )
 }

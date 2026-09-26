@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthProvider'
 import { ProtectedRoute } from './components/routing/ProtectedRoute'
 import { PublicOnlyRoute } from './components/routing/PublicOnlyRoute'
+import { AppShell } from './components/app/AppShell'
 import { isSupabaseConfigured } from './lib/supabaseConfig'
 import { RootRedirect } from './pages/RootRedirect'
 import { LoginPage } from './pages/LoginPage'
@@ -9,18 +10,30 @@ import { SignUpPage } from './pages/SignUpPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { JourneysPage } from './pages/JourneysPage'
+import { AlertsPage } from './pages/AlertsPage'
+import { RecoveryPage } from './pages/RecoveryPage'
+import { ProfilePage } from './pages/ProfilePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { SupabaseSetupPage } from './pages/SupabaseSetupPage'
 
 /**
  * Wayvo route map
  *
+ *   Authentication — the cinematic glass treatment:
  *   /                 → /login or /dashboard depending on the real session
  *   /login            → public only   (redirects to /dashboard when signed in)
  *   /signup           → public only
  *   /forgot-password  → public only
  *   /reset-password   → public only   (arrives here from a recovery email)
- *   /dashboard        → protected     (redirects to /login when signed out)
+ *
+ *   The product — a clean, light, professional layout behind one shell:
+ *   /dashboard        → protected
+ *   /journeys         → protected
+ *   /alerts           → protected
+ *   /recovery         → protected
+ *   /profile          → protected
+ *
  *   /setup            → Supabase not configured
  */
 export function App() {
@@ -36,6 +49,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<RootRedirect />} />
 
+          {/* ---------- authentication ---------- */}
           <Route
             path="/login"
             element={
@@ -70,14 +84,20 @@ export function App() {
           */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
+          {/* ---------- signed-in product ---------- */}
           <Route
-            path="/dashboard"
             element={
               <ProtectedRoute>
-                <DashboardPage />
+                <AppShell />
               </ProtectedRoute>
             }
-          />
+          >
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/journeys" element={<JourneysPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/recovery" element={<RecoveryPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+          </Route>
 
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

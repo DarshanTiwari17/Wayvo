@@ -40,6 +40,7 @@ Full setup, Google OAuth configuration and the live verification checklist:
 | `npm run build` | Typecheck + production build |
 | `npm run preview` | Serve the production build |
 | `npm run typecheck` | Types only |
+| `npm run test:parser` | 55 assertions against the booking extractor |
 
 ---
 
@@ -62,25 +63,54 @@ Full setup, Google OAuth configuration and the live verification checklist:
 ```
 src/
 ├── lib/
-│   ├── supabaseConfig.ts   env validation, redirect-url helpers
-│   ├── supabase.ts         THE single Supabase client (never created elsewhere)
-│   ├── authErrors.ts       Supabase/PostgREST error -> human message + validation
-│   └── authUrlState.ts     reads the error fragment on a callback redirect
+│   ├── supabaseConfig.ts      env validation, redirect-url helpers
+│   ├── supabase.ts            THE single Supabase client (never created elsewhere)
+│   ├── authErrors.ts          Supabase/PostgREST error -> human message
+│   ├── authUrlState.ts        reads the error fragment on a callback redirect
+│   └── bookingParser.ts       ticket text -> structured journey + provenance
 ├── contexts/
-│   ├── authContext.ts     context object + types (no components, so HMR works)
-│   └── AuthProvider.tsx   the one place auth state lives
+│   ├── authContext.ts         context object + types (no components, so HMR works)
+│   └── AuthProvider.tsx       the one place auth state lives
 ├── services/
-│   └── profileService.ts   every `profiles` query in the app
+│   ├── profileService.ts      every `profiles` query in the app
+│   ├── travelService.ts       journeys, disruptions, recovery plans
+│   ├── documentReader.ts      PDF text (pdf.js) + photo OCR (Tesseract)
+│   ├── documentService.ts     Supabase Storage upload + metadata rows
+│   ├── importService.ts       dedup, save journey + segments
+│   └── gmailService.ts        browser side of the Gmail flow (Edge Functions only)
 ├── hooks/
-│   ├── useAuth.ts          typed accessor for the context
-│   └── useProfile.ts       on-demand profile read
+│   ├── useAuth.ts             typed accessor for the context
+│   └── useTravelData.ts       real queries with loading / empty / error / missing
 ├── components/
-│   ├── auth/               the reference login design system
-│   ├── dashboard/          signed-in chrome
-│   └── routing/            ProtectedRoute / PublicOnlyRoute / RouteLoader
-├── pages/                  one file per route
-└── types/database.ts       Supabase-generated schema types
+│   ├── auth/                  the reference login design system (glass)
+│   ├── app/                   the product design system (light, minimal)
+│   ├── journeys/              import panel, review screen, journey card
+│   └── routing/               ProtectedRoute / PublicOnlyRoute / RouteLoader
+├── pages/                     one file per route
+└── types/database.ts          Supabase-generated schema types
+
+supabase/
+├── migrations/
+│   ├── 0001_profiles.sql          profiles + RLS + signup trigger
+│   ├── 0002_travel.sql            trips, disruptions, recovery_plans + RLS
+│   └── 0003_journey_import.sql    import columns, segments, documents,
+│                                   gmail_connections, Storage bucket + RLS
+└── functions/                 Deno Edge Functions (hold the Google secret)
+    ├── _shared/gmail.ts
+    ├── gmail-connect/  gmail-callback/  gmail-search/  gmail-extract/
 ```
+
+### Two design languages, on purpose
+
+| Surface | Language |
+| --- | --- |
+| `/login`, `/signup`, `/forgot-password`, `/reset-password` | Cinematic glass over the nature photograph, per the reference image |
+| Everything behind `/dashboard` | Light, solid surfaces, hairline borders, small radii, restrained shadows, colour only for meaning |
+
+They never mix. The `.wayvo-*` classes belong to the auth screens; the
+`.wva-*` classes to the product. No glass or photography appears in the
+signed-in app.
+
 
 ### The Supabase client
 
@@ -168,11 +198,31 @@ backdrop. Replace it with Wayvo's own photography by dropping a file in
 
 ## Not implemented yet
 
-`trips`, `trip_segments`, `bookings`, `disruptions`, `recovery_plans`,
-`travel_preferences` and `traveler_preferences` are designed but not created.
-The dashboard's "Coming next" panel lists them as unavailable rather than
-rendering fake rows. Shapes, RLS patterns and the conventions new tables must
-follow are in [`supabase/ROADMAP.md`](supabase/ROADMAP.md).
+`bookings`, `trip_segments`, `travel_preferences` and `traveler_preferences` are
+designed but not created. The Alerts and Recovery pages query their real tables
+and show honest empty states. Shapes, RLS patterns and the conventions new
+tables must follow are in [`supabase/ROADMAP.md`](supabase/ROADMAP.md).
+
+---
+
+## Journey import
+
+Journeys can be brought in from a booking rather than typed by hand:
+
+- **Upload a ticket or PDF** — a real file picker, the file is stored in
+  Supabase Storage, read with pdf.js (PDF) or Tesseract OCR (photo), and parsed.
+- **Import from Gmail** — a real Google consent flow, executed server-side by
+  Edge Functions so the client secret and the Gmail refresh token never reach the
+  browser.
+
+Both paths land on the same review screen. Extraction is pattern matching, so
+**nothing is written to Supabase until the traveller confirms**, every field is
+editable, and each one is labelled as read from the document (✓) or inferred by
+Wayvo (⚠). A value that was not found stays empty rather than being invented,
+and a supermarket receipt is rejected rather than turned into a journey.
+
+Set-up for the migration, the Storage bucket and the Gmail functions:
+**[`supabase/JOURNEY-IMPORT.md`](supabase/JOURNEY-IMPORT.md)**.
 
 ---
 
@@ -180,6 +230,14 @@ follow are in [`supabase/ROADMAP.md`](supabase/ROADMAP.md).
 
 - `VITE_SUPABASE_ANON_KEY` only. The `service_role` key bypasses RLS and must
   never reach a `VITE_` variable — Vite inlines those into the bundle.
-- `.env*` is git-ignored except `.env.example`.
+- `.env*` is git-ignored except `.env.example`; `.env.edge` (the Edge Function
+  service-role secret) is ignored too.
 - Passwords are sent only to Supabase over TLS; nothing is logged or stored by
   Wayvo.
+- Uploaded documents live in a **private** bucket addressed by the caller's own
+  UUID, enforced by Storage RLS. They are served only through short-lived
+  signed URLs.
+- `gmail_connections` grants the browser six non-sensitive columns. The refresh
+  and access tokens are readable only by the service role inside the Edge
+  Functions, so `select refresh_token from gmail_connections` is denied from the
+  client.

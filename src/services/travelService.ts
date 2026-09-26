@@ -10,6 +10,7 @@
  * below are a convenience, not the control — see 0002_travel.sql.
  */
 import { getSupabase } from '../lib/supabase'
+import { TRIP_COLUMNS } from '../types/database'
 import type { Disruption, RecoveryPlan, Trip, TripInsert, TripStatus, TripUpdate } from '../types/database'
 
 /** Thrown when a query fails, so callers can decide how to surface it. */
@@ -33,7 +34,9 @@ function toError(error: { message: string; code?: string }): TravelDataError {
   return new TravelDataError(error.message, error.code)
 }
 
-const TRIP_COLUMNS = 'id, profile_id, title, origin, destination, status, starts_on, ends_on, created_at, updated_at'
+const DISRUPTION_COLUMNS = 'id, profile_id, trip_id, kind, severity, headline, detail, reported_at, resolved_at'
+const RECOVERY_COLUMNS =
+  'id, profile_id, trip_id, disruption_id, title, summary, total_cost, currency, status, created_at, updated_at'
 
 /* ---------------------------------------------------------------------------
  * Journeys
@@ -88,7 +91,7 @@ export async function fetchOpenDisruptions(profileId: string): Promise<Disruptio
   const supabase = getSupabase()
   const { data, error } = await supabase
     .from('disruptions')
-    .select('id, profile_id, trip_id, kind, severity, headline, detail, reported_at, resolved_at')
+    .select(DISRUPTION_COLUMNS)
     .eq('profile_id', profileId)
     .is('resolved_at', null)
     .order('reported_at', { ascending: false })
@@ -105,7 +108,7 @@ export async function fetchRecoveryPlans(profileId: string): Promise<RecoveryPla
   const supabase = getSupabase()
   const { data, error } = await supabase
     .from('recovery_plans')
-    .select('id, profile_id, trip_id, disruption_id, title, summary, total_cost, currency, status, created_at, updated_at')
+    .select(RECOVERY_COLUMNS)
     .eq('profile_id', profileId)
     .order('created_at', { ascending: false })
 

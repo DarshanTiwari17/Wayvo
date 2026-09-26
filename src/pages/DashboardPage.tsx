@@ -35,6 +35,12 @@ export function DashboardPage() {
     [journeys.rows],
   )
 
+  // If every journey is in the past, an "upcoming" list would render empty and
+  // look broken. Fall back to the most recent ones under an honest heading.
+  const recent = useMemo(() => journeys.rows.slice(0, 3), [journeys.rows])
+  const visibleJourneys = upcoming.length > 0 ? upcoming : recent
+  const listHeading = upcoming.length > 0 ? 'Your journeys' : 'Recent journeys'
+
   const openAlertCount = alerts.status === 'ready' ? alerts.rows.length : 0
   const activePlanCount = plans.status === 'ready' ? plans.rows.filter((p) => p.status === 'proposed').length : 0
   const journeyCount = journeys.status === 'ready' ? journeys.rows.length : 0
@@ -109,7 +115,7 @@ export function DashboardPage() {
       {/* --- Journeys ----------------------------------------------------- */}
       <Card>
         <div className="mb-5 flex items-center justify-between gap-4">
-          <SectionTitle>Your journeys</SectionTitle>
+          <SectionTitle>{listHeading}</SectionTitle>
           {journeys.status === 'ready' && journeyCount > 0 && (
             <Link to="/journeys" className="wva-btn wva-btn--ghost wva-btn--sm shrink-0">
               View all
@@ -145,7 +151,7 @@ export function DashboardPage() {
 
         {journeys.status === 'ready' && journeyCount > 0 && (
           <ul className="flex flex-col gap-3">
-            {upcoming.map((trip) => (
+            {visibleJourneys.map((trip) => (
               <li key={trip.id}>
                 <Link
                   to={`/journeys?open=${trip.id}`}
