@@ -40,7 +40,10 @@ Full setup, Google OAuth configuration and the live verification checklist:
 | `npm run build` | Typecheck + production build |
 | `npm run preview` | Serve the production build |
 | `npm run typecheck` | Types only |
-| `npm run test:parser` | 55 assertions against the booking extractor |
+| `npm run test` | All three suites below |
+| `npm run test:parser` | 67 assertions against the booking extractor |
+| `npm run test:gmail` | Signed OAuth `state`, open-redirect guard, candidate hints |
+| `npm run test:functions` | Every Edge Function parses and handles its failure modes |
 
 ---
 
@@ -96,9 +99,18 @@ supabase/
 │   └── 0003_journey_import.sql    import columns, segments, documents,
 │                                   gmail_connections, Storage bucket + RLS
 └── functions/                 Deno Edge Functions (hold the Google secret)
-    ├── _shared/gmail.ts
-    ├── gmail-connect/  gmail-callback/  gmail-search/  gmail-extract/
+    ├── config.toml            per-function verify_jwt; deploy with
+    │                          `supabase functions deploy <name>`
+    ├── _shared/                NOT deployed — CLI skips `_` dirs
+    │   ├── gmail.ts            scopes, token exchange, MIME parsing
+    │   └── state.ts            signed + expiring OAuth `state`
+    ├── gmail-connect/          POST   → Google consent URL
+    ├── gmail-callback/         GET    ← Google redirect (verify_jwt = false)
+    ├── gmail-search/           POST   → booking candidates from Gmail
+    └── gmail-extract/          POST   → one chosen email, parsed
 ```
+
+Deploy and secrets: [`supabase/JOURNEY-IMPORT.md`](supabase/JOURNEY-IMPORT.md).
 
 ### Two design languages, on purpose
 
@@ -230,8 +242,10 @@ Set-up for the migration, the Storage bucket and the Gmail functions:
 
 - `VITE_SUPABASE_ANON_KEY` only. The `service_role` key bypasses RLS and must
   never reach a `VITE_` variable — Vite inlines those into the bundle.
-- `.env*` is git-ignored except `.env.example`; `.env.edge` (the Edge Function
-  service-role secret) is ignored too.
+- `.env*` is git-ignored except `.env.example`; `.env.edge` (the two Google
+  OAuth secrets) is ignored too. `SUPABASE_SERVICE_ROLE_KEY` is never set by
+  hand: Supabase injects it into every Edge Function and rejects any
+  `SUPABASE_`-prefixed secret.
 - Passwords are sent only to Supabase over TLS; nothing is logged or stored by
   Wayvo.
 - Uploaded documents live in a **private** bucket addressed by the caller's own

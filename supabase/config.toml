@@ -3,8 +3,10 @@
 # Tracked in git; it contains no secrets. Credentials belong in:
 #   .env            → VITE_* browser config (anon key only)
 #   .env.edge       → function-only secrets (service role, Google client secret)
-
-project_id = "wayvo"
+#
+# There is deliberately no `project_id` here: it must be your real project ref,
+# which `supabase link --project-ref <ref>` writes for you. A hard-coded
+# placeholder is worse than none, because the CLI will believe it.
 
 [api]
 enabled = true

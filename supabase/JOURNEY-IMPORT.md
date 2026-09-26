@@ -63,37 +63,58 @@ side and store the refresh token in a table the browser cannot read.
 ```bash
 supabase login
 supabase link --project-ref <your-ref>
+```
 
-supabase secrets set \
-  GOOGLE_CLIENT_ID="<client-id>.apps.googleusercontent.com" \
-  GOOGLE_CLIENT_SECRET="<client-secret>" \
-  ALLOWED_REDIRECT_ORIGINS="http://localhost:5173"
+Copy `.env.edge.example` to `.env.edge`, fill in the two Google values, then:
 
-# The service role key is needed to write the token the browser cannot see.
+```bash
 supabase secrets set --env-file .env.edge
+supabase secrets list          # confirm all three arrived
 ```
 
-`.env.edge` (git-ignored) must contain:
+You only ever set **three** secrets:
 
-```
-SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
-```
+| Secret | Value |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` | ends in `.apps.googleusercontent.com` |
+| `GOOGLE_CLIENT_SECRET` | from the same OAuth client |
+| `ALLOWED_REDIRECT_ORIGINS` | `http://localhost:5173` (add your real domain later) |
 
-`SUPABASE_SERVICE_ROLE_KEY` is only ever read inside the functions. It is never
-in `VITE_*`, never in the bundle, and never in the browser.
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are
+**injected automatically** into every Edge Function — you do not set them, and
+Supabase rejects any secret whose name starts with `SUPABASE_`. The service role
+key is what lets the functions store the Gmail refresh token somewhere the
+browser cannot read it, and what signs the OAuth `state`; it is safe inside a
+function and must never reach a browser.
+
+Secrets are live immediately — no redeploy needed after setting them.
 
 ### 2c. Deploy
 
 ```bash
-supabase functions deploy gmail-connect  --no-verify-jwt
+supabase functions deploy gmail-connect
+supabase functions deploy gmail-search
+supabase functions deploy gmail-extract
 supabase functions deploy gmail-callback --no-verify-jwt
-supabase functions deploy gmail-search   --no-verify-jwt
-supabase functions deploy gmail-extract  --no-verify-jwt
 ```
 
-`gmail-callback` needs `--no-verify-jwt` because Google redirects the browser
-there directly; that function authenticates the traveller with the `session`
-JWT carried through the flow and nothing else.
+**Only `gmail-callback` is exempt from JWT verification.** The other three are
+called by the signed-in app through `supabase-js`, which sends the traveller's
+JWT, so they keep Supabase's verification on — that verified token is what
+attributes the Gmail connection to the right person.
+
+`gmail-callback` has to be exempt because Google redirects the browser straight
+there and no Supabase JWT is present. It is authenticated by an HMAC-signed,
+10-minute `state` value instead (see `_shared/state.ts`), which carries only the
+profile id and the return path. No access token, refresh token or JWT ever
+travels in a URL.
+
+Recent Supabase CLI versions read `verify_jwt` from `supabase/config.toml`, and
+that file already sets it correctly per function. If your CLI is old enough to
+ignore it, pass `--no-verify-jwt` only for `gmail-callback` as shown above.
+
+`_shared/` is not deployed — the CLI skips directories beginning with `_`, and
+the functions import from it at build time.
 
 ### 2d. Add the function URLs to Supabase
 
@@ -175,7 +196,9 @@ A supermarket receipt is rejected outright rather than turned into a journey.
 Run the parser tests with:
 
 ```bash
-npm run test:parser      # 55 assertions on real ticket, email and receipt text
+npm run test:parser      # 67 assertions on real ticket, email and receipt text
+npm run test:gmail       # signed state, open-redirect guard, candidate hints
+npm run test:functions   # every function parses and handles its failure modes
 ```
 
 ---
@@ -197,10 +220,12 @@ matched. You can then import anyway or open the existing journey.
 
 | Symptom | Cause |
 | --- | --- |
-| "Gmail import is not set up on this project yet" | Functions not deployed, or `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` not set |
+| "Gmail import is not set up on this project yet" | Functions not deployed, or `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` not set. Check with `supabase secrets list` |
+| "Gmail couldn't be connected" after a redirect | `GOOGLE_CLIENT_SECRET` is wrong, or the Google redirect URI does not match exactly |
+| Connect returns straight to /journeys with no result | The signed `state` expired (>10 min) or was rejected. Just start again; if it persists, `SUPABASE_SERVICE_ROLE_KEY` is not set |
 | "Gmail access wasn't granted" | The traveller declined, or the stored refresh token was revoked |
 | "We couldn't find any recent travel bookings" | No matches in the last 180 days, or everything is filed outside Gmail's search filters |
-| "Gmail couldn't be connected" | Redirect URI mismatch — check 2a step 3 |
+| "Gmail couldn't be connected" (before any redirect) | The function isn't deployed yet, or the browser cached an old bundle |
 | "That file type isn't supported" | Anything that is not a PDF or an image |
 | "We couldn't read this document" | A scanned PDF with no text layer, or a very blurry photo |
 | "We couldn't find enough travel information" | A receipt, or a document with no route/date/mode |
