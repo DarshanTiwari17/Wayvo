@@ -616,6 +616,567 @@
 }
 
 /* ==========================================================================
+   Public landing page
+   ========================================================================== */
+
+.wayvo-landing {
+  --landing-ink: #14231d;
+  --landing-muted: #66736d;
+  --landing-green: #176b54;
+  background: #f6f7f3;
+  color: var(--landing-ink);
+  font-family: var(--font-sans);
+}
+
+.wayvo-landing__hero {
+  position: relative;
+  display: flex;
+  min-height: 720px;
+  height: 88svh;
+  max-height: 980px;
+  flex-direction: column;
+  overflow: hidden;
+  color: #fff;
+  background: #152b22;
+}
+
+.wayvo-landing__image,
+.wayvo-landing__scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.wayvo-landing__image {
+  object-fit: cover;
+  object-position: center 48%;
+  animation: landing-image-in 1.2s ease-out both;
+}
+
+.wayvo-landing__scrim {
+  background:
+    linear-gradient(90deg, rgb(8 25 18 / 0.78) 0%, rgb(8 25 18 / 0.55) 43%, rgb(8 25 18 / 0.12) 100%),
+    linear-gradient(0deg, rgb(8 25 18 / 0.46), transparent 28%, rgb(8 25 18 / 0.22));
+}
+
+.wayvo-landing__nav,
+.wayvo-landing__hero-content,
+.wayvo-landing__image-note {
+  position: relative;
+  z-index: 1;
+}
+
+.wayvo-landing__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(100% - 64px, 1320px);
+  min-height: 88px;
+  margin-inline: auto;
+  border-bottom: 1px solid rgb(255 255 255 / 0.24);
+}
+
+.wayvo-landing__nav nav {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+}
+
+.wayvo-landing__wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.wayvo-landing__mark {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 0.72);
+  border-radius: 50%;
+  font-family: Georgia, serif;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.wayvo-landing__nav-link,
+.wayvo-landing__nav-login {
+  color: #fff;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.wayvo-landing__nav-link {
+  opacity: 0.86;
+}
+
+.wayvo-landing__nav-link:hover {
+  opacity: 1;
+}
+
+.wayvo-landing__nav-login {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  padding-inline: 17px;
+  border: 1px solid rgb(255 255 255 / 0.65);
+  border-radius: 4px;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.wayvo-landing__nav-login:hover {
+  background: #fff;
+  color: var(--landing-ink);
+}
+
+.wayvo-landing__hero-content {
+  width: min(100% - 64px, 1320px);
+  margin: auto;
+  padding-block: 88px 120px;
+  animation: landing-content-in 0.7s 0.12s ease-out both;
+}
+
+.wayvo-landing__eyebrow,
+.wayvo-landing__section-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: #d6e6dc;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.wayvo-landing__eyebrow {
+  letter-spacing: 0.12em;
+}
+
+.wayvo-landing__eyebrow span {
+  width: 23px;
+  height: 1px;
+  background: #d6e6dc;
+}
+
+.wayvo-landing__hero h1 {
+  max-width: 720px;
+  margin: 26px 0 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 72px;
+  font-weight: 400;
+  line-height: 0.99;
+  text-wrap: balance;
+}
+
+.wayvo-landing__hero h1 em {
+  color: #d8c58d;
+  font-weight: 400;
+}
+
+.wayvo-landing__intro {
+  max-width: 455px;
+  margin: 25px 0 0;
+  color: rgb(255 255 255 / 0.84);
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.wayvo-landing__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 34px;
+}
+
+.wayvo-landing__primary,
+.wayvo-landing__secondary {
+  display: inline-flex;
+  min-height: 49px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.wayvo-landing__primary {
+  padding-inline: 20px;
+  border: 1px solid #f5f4e9;
+  border-radius: 4px;
+  background: #f5f4e9;
+  color: #1d382b;
+}
+
+.wayvo-landing__primary:hover {
+  border-color: #d8c58d;
+  background: #d8c58d;
+}
+
+.wayvo-landing__secondary {
+  color: #fff;
+}
+
+.wayvo-landing__secondary:hover {
+  color: #e5d7ac;
+}
+
+.wayvo-landing__image-note {
+  align-self: flex-end;
+  margin: 0 max(calc((100% - 1320px) / 2), 32px) 27px 0;
+  color: rgb(255 255 255 / 0.72);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.wayvo-landing__help {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.85fr) minmax(0, 2fr);
+  gap: 70px;
+  width: min(100% - 64px, 1320px);
+  margin-inline: auto;
+  padding-block: 88px 94px;
+}
+
+.wayvo-landing__section-label {
+  color: var(--landing-green);
+  letter-spacing: 0.1em;
+}
+
+.wayvo-landing__help-heading h2 {
+  margin: 18px 0 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 38px;
+  font-weight: 400;
+  line-height: 1.12;
+}
+
+.wayvo-landing__highlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-self: center;
+  border-top: 1px solid #d9dfd9;
+}
+
+.wayvo-landing__highlight {
+  min-width: 0;
+  padding: 22px 20px 0;
+  border-right: 1px solid #d9dfd9;
+}
+
+.wayvo-landing__highlight:first-child {
+  padding-left: 0;
+}
+
+.wayvo-landing__highlight:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.wayvo-landing__highlight-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wayvo-landing__highlight-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e7eee8;
+  color: var(--landing-green);
+}
+
+.wayvo-landing__number {
+  color: #9aa69f;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wayvo-landing__highlight h3 {
+  margin: 24px 0 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.wayvo-landing__highlight p {
+  margin: 10px 0 0;
+  color: var(--landing-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.wayvo-landing__footer {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px max(calc((100% - 1320px) / 2), 32px);
+  border-top: 1px solid #dfe4de;
+  color: var(--landing-muted);
+  font-size: 12px;
+}
+
+.wayvo-landing__footer .wayvo-landing__wordmark {
+  color: var(--landing-ink);
+}
+
+.wayvo-landing__footer .wayvo-landing__mark {
+  width: 25px;
+  height: 25px;
+  border-color: #9eaaa2;
+}
+
+.wayvo-landing__footer > a:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--landing-green);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@keyframes landing-image-in {
+  from { transform: scale(1.035); }
+  to { transform: scale(1); }
+}
+
+@keyframes landing-content-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 900px) {
+  .wayvo-landing__help {
+    grid-template-columns: 1fr;
+    gap: 38px;
+  }
+
+  .wayvo-landing__highlights {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .wayvo-landing__hero {
+    min-height: 690px;
+    height: 86svh;
+    max-height: 850px;
+  }
+
+  .wayvo-landing__image {
+    object-position: 48% center;
+  }
+
+  .wayvo-landing__scrim {
+    background:
+      linear-gradient(90deg, rgb(8 25 18 / 0.66), rgb(8 25 18 / 0.2)),
+      linear-gradient(0deg, rgb(8 25 18 / 0.58), transparent 60%, rgb(8 25 18 / 0.24));
+  }
+
+  .wayvo-landing__nav,
+  .wayvo-landing__hero-content,
+  .wayvo-landing__help {
+    width: calc(100% - 40px);
+  }
+
+  .wayvo-landing__nav {
+    min-height: 72px;
+  }
+
+  .wayvo-landing__nav nav {
+    gap: 18px;
+  }
+
+  .wayvo-landing__nav-link {
+    display: none;
+  }
+
+  .wayvo-landing__hero-content {
+    padding-block: 84px 96px;
+  }
+
+  .wayvo-landing__hero h1 {
+    max-width: 500px;
+    margin-top: 22px;
+    font-size: 48px;
+  }
+
+  .wayvo-landing__intro {
+    max-width: 390px;
+    font-size: 15px;
+  }
+
+  .wayvo-landing__actions {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 17px;
+  }
+
+  .wayvo-landing__image-note {
+    margin-right: 20px;
+    font-size: 11px;
+  }
+
+  .wayvo-landing__help {
+    padding-block: 58px 64px;
+  }
+
+  .wayvo-landing__help-heading h2 {
+    font-size: 34px;
+  }
+
+  .wayvo-landing__highlights {
+    grid-template-columns: 1fr;
+  }
+
+  .wayvo-landing__highlight,
+  .wayvo-landing__highlight:first-child,
+  .wayvo-landing__highlight:last-child {
+    padding: 19px 0;
+    border-right: 0;
+    border-bottom: 1px solid #d9dfd9;
+  }
+
+  .wayvo-landing__highlight:last-child {
+    border-bottom: 0;
+  }
+
+  .wayvo-landing__highlight h3 {
+    margin-top: 14px;
+  }
+
+  .wayvo-landing__footer {
+    flex-wrap: wrap;
+    padding-inline: 20px;
+  }
+
+  .wayvo-landing__footer > span {
+    order: 3;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wayvo-landing__image,
+  .wayvo-landing__hero-content {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Auth presentation refinements
+   ========================================================================== */
+
+.wayvo-card {
+  border-color: rgb(255 255 255 / 0.4);
+  background: rgb(10 29 21 / 0.56);
+  backdrop-filter: blur(26px) saturate(125%);
+  -webkit-backdrop-filter: blur(26px) saturate(125%);
+}
+
+.wayvo-login__eyebrow {
+  margin: 0 0 13px;
+  color: #d9c98f;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.wayvo-login .wayvo-card__title {
+  font-size: 28px;
+  font-weight: 500;
+}
+
+.wayvo-login__intro {
+  margin: 9px 0 0;
+  color: rgb(255 255 255 / 0.72);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.wayvo-hero__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0 0 26px;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.wayvo-hero__brand span {
+  color: rgb(255 255 255 / 0.68);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.wayvo-hero__headline {
+  max-width: 660px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 54px;
+  font-weight: 400;
+  line-height: 1.06;
+  text-transform: none;
+}
+
+.wayvo-hero__rule {
+  max-width: 430px;
+  height: 1px;
+  background: rgb(255 255 255 / 0.6);
+}
+
+@media (min-width: 768px) {
+  .wayvo-auth-shell {
+    padding-left: clamp(32px, 8vw, 128px);
+    padding-right: clamp(32px, 8vw, 128px);
+    column-gap: clamp(48px, 7vw, 112px);
+    grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.18fr);
+  }
+
+  .wayvo-card {
+    max-width: 440px;
+    padding-inline: clamp(28px, 3vw, 44px);
+  }
+}
+
+@media (max-width: 767px) {
+  .wayvo-auth-shell {
+    row-gap: 35px;
+  }
+
+  .wayvo-hero__brand {
+    margin-bottom: 12px;
+  }
+
+  .wayvo-hero__headline {
+    font-size: 36px;
+  }
+
+  .wayvo-login .wayvo-card__title {
+    font-size: 26px;
+  }
+}
+
+/* ==========================================================================
    WAYVO PRODUCT UI  (signed-in only)
 
    A deliberately different design language from the authentication screens

@@ -60,6 +60,7 @@ export function AuthShell({ children }: AuthShellProps) {
 
         <aside className="w-full max-w-[38.5rem]">
           <h1 className="wayvo-hero__headline wayvo-hero__wordmark">Wayvo</h1>
+          <p className="wayvo-hero__brand"><span>Travel, with a plan.</span></p>
 
           <div className="mt-8 md:mt-14">
             <div className="wayvo-hero__rule" />

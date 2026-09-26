@@ -116,12 +116,15 @@ export function LoginPage() {
 
   return (
     <AuthShell>
-      <h2 className="wayvo-card__title">Login to Your Account</h2>
+      <div className="wayvo-login">
+        <p className="wayvo-login__eyebrow">Your next journey starts here</p>
+        <h2 className="wayvo-card__title">Welcome back.</h2>
+        <p className="wayvo-login__intro">Sign in to see your journeys and travel updates.</p>
 
       {/* Vertical rhythm mirrors the reference: a wide gap below the heading,
           ~38px between field groups, a tighter gap into the checkbox row and
           button. */}
-      <form className="mt-11 flex flex-col" onSubmit={handleSubmit} noValidate>
+      <form className="mt-8 flex flex-col" onSubmit={handleSubmit} noValidate>
         {(formError || urlAuthError) && (
           <div className="mb-6">
             <FormAlert tone="error" live>
@@ -228,6 +231,7 @@ export function LoginPage() {
           </p>
         </div>
       </form>
+      </div>
     </AuthShell>
   )
 }
