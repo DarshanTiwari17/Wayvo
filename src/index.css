@@ -1,0 +1,1215 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   Wayvo design tokens
+   Derived from the /login reference artwork: a full-bleed nature photograph,
+   a frosted-glass auth card on the left, and an uppercase display headline on
+   the right. Every value below is used by the auth shell and its forms.
+   ========================================================================== */
+
+@theme {
+  --font-display: 'Montserrat', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Deep forest ink used for text sitting on white surfaces. */
+  --color-ink: #0d1f17;
+  --color-ink-soft: #14372a;
+
+  /* Accent pulled from the water in the hero photograph. */
+  --color-lagoon: #14a08a;
+  --color-lagoon-deep: #0b6d5f;
+
+  --color-danger: #fca5a5;
+
+  /* ---------------------------------------------------------------------
+     Wayvo product (signed-in) design tokens.
+     Deliberately a different language from the auth screens: solid light
+     surfaces, hairline borders, restrained shadows, semantic status colours.
+     No glass, no photography, no gradients.
+     --------------------------------------------------------------------- */
+  --color-app-bg: #f5f7f7;
+  --color-app-surface: #ffffff;
+  --color-app-surface-alt: #fafbfb;
+  --color-app-border: #e3e7e6;
+  --color-app-border-strong: #cfd6d4;
+
+  --color-app-text: #0f1a16;
+  --color-app-text-muted: #5a6a64;
+  --color-app-text-subtle: #85938d;
+
+  /* Brand teal-green: interactive actions, primary buttons, active nav. */
+  --color-app-accent: #0d7a5f;
+  --color-app-accent-hover: #0a6249;
+  --color-app-accent-soft: #e7f3ef;
+
+  /* Semantic status colours, reserved for meaningful states only. */
+  --color-app-success: #067647;
+  --color-app-success-soft: #eaf7f0;
+  --color-app-warn: #b54708;
+  --color-app-warn-soft: #fdf3e7;
+  --color-app-danger: #b42318;
+  --color-app-danger-soft: #fdeceb;
+  --color-app-info: #175cd3;
+  --color-app-info-soft: #eff5ff;
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100svh;
+    /* The auth screens paint their own dark photographic backdrop, so the page
+       itself stays light for the signed-in product. */
+    background-color: var(--color-app-bg);
+    color: var(--color-app-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  :focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+  }
+}
+
+/* ==========================================================================
+   Auth shell — the split layout from the reference
+   ========================================================================== */
+
+@layer components {
+  /* Photographic backdrop + legibility scrim + the 1px frame in the reference.
+     `--wayvo-hero-image` is set once on <html> in main.tsx (from
+     VITE_WAYVO_HERO_IMAGE) so every surface that uses it stays in sync. */
+  .wayvo-hero-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-color: #0b1f16;
+    background-image: var(--wayvo-hero-image, url('/images/wayvo-waterfall.jpg'));
+    background-size: cover;
+    background-position: 62% center;
+    background-repeat: no-repeat;
+  }
+
+  /* On a tall, narrow screen the waterfall needs to sit in the upper half. */
+  @media (max-width: 767px) {
+    .wayvo-hero-backdrop {
+      background-position: 50% 32%;
+    }
+  }
+
+  .wayvo-hero-backdrop::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(120% 90% at 50% 40%, rgb(0 0 0 / 0) 35%, rgb(3 18 12 / 0.55) 100%),
+      linear-gradient(to bottom, rgb(4 24 16 / 0.34) 0%, rgb(4 24 16 / 0.1) 34%, rgb(3 22 15 / 0.5) 100%);
+  }
+
+  /*
+    Two columns at every size >=768px, collapsing to a single column below.
+
+    The inline padding is deliberately asymmetric, matching the reference:
+    the card sits ~13% in from the left while the headline block runs to
+    within ~5.5% of the right edge. The 1fr / 1.25fr split reproduces the
+    reference's 410px card and 612px headline block at a 1440px viewport.
+  */
+  .wayvo-auth-shell {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    align-items: center;
+    min-height: 100svh;
+    padding-block: clamp(28px, 6vh, 56px);
+    padding-left: clamp(20px, 13vw, 200px);
+    padding-right: clamp(20px, 5.5vw, 90px);
+    column-gap: clamp(40px, 5vw, 80px);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  }
+
+  @media (max-width: 767px) {
+    .wayvo-auth-shell {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: clamp(24px, 4vh, 40px);
+      padding-block: clamp(20px, 4vh, 40px);
+    }
+  }
+
+  @media (min-width: 768px) and (max-width: 1279px) {
+    .wayvo-auth-shell {
+      padding-left: clamp(32px, 7vw, 120px);
+      padding-right: clamp(24px, 4vw, 64px);
+    }
+  }
+
+  /* --- frosted glass card ------------------------------------------------- */
+
+  /*
+    Vertical padding is intentionally generous: in the reference the content
+    block occupies the middle ~62% of the card and the empty space above the
+    heading and below the last link is roughly a third of the content height.
+    11vh keeps that proportion on a laptop without pushing the card off a
+    short screen.
+  */
+  .wayvo-card {
+    position: relative;
+    width: 100%;
+    max-width: 410px;
+    border-radius: 14px;
+    border: 1px solid rgb(255 255 255 / 0.32);
+    background: rgb(255 255 255 / 0.13);
+    backdrop-filter: blur(22px) saturate(118%);
+    -webkit-backdrop-filter: blur(22px) saturate(118%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.16),
+      0 28px 70px -28px rgb(0 0 0 / 0.55);
+    padding-block: clamp(30px, 5.5vh, 56px);
+    padding-inline: clamp(24px, 2.2vw, 40px);
+  }
+
+  /* Portrait tablets: keep the reference's two-column identity but stop the
+     card from swallowing half the viewport. */
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .wayvo-card {
+      max-width: 352px;
+      padding-inline: clamp(22px, 3.4vw, 32px);
+    }
+  }
+
+  /* Phones: 16px stops iOS Safari zooming in when a field is focused. */
+  @media (max-width: 767px) {
+    .wayvo-card {
+      max-width: 420px;
+      padding-block: clamp(26px, 4.5vh, 40px);
+      padding-inline: clamp(20px, 5.5vw, 30px);
+    }
+  }
+
+  .wayvo-card__title {
+    font-family: var(--font-display);
+    font-size: clamp(21px, 1.72vw, 25px);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: #fff;
+    text-wrap: balance;
+  }
+
+  .wayvo-card__subtitle {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: rgb(255 255 255 / 0.68);
+  }
+
+  /* --- form fields -------------------------------------------------------- */
+
+  .wayvo-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.2;
+    color: rgb(255 255 255 / 0.92);
+  }
+
+  .wayvo-input {
+    display: block;
+    width: 100%;
+    height: 42px;
+    padding: 0 14px;
+    border-radius: 7px;
+    border: 1px solid rgb(255 255 255 / 0.3);
+    background: rgb(255 255 255 / 0.1);
+    color: #fff;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1;
+    transition:
+      border-color 0.18s ease,
+      background-color 0.18s ease,
+      box-shadow 0.18s ease;
+  }
+
+  .wayvo-input::placeholder {
+    color: rgb(255 255 255 / 0.45);
+  }
+
+  .wayvo-input:hover:not(:disabled) {
+    border-color: rgb(255 255 255 / 0.5);
+  }
+
+  .wayvo-input:focus {
+    outline: none;
+    border-color: rgb(255 255 255 / 0.9);
+    background: rgb(255 255 255 / 0.17);
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.16);
+  }
+
+  .wayvo-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Phones: 16px stops iOS Safari zooming in when a field is focused. */
+  @media (max-width: 767px) {
+    .wayvo-input {
+      font-size: 16px;
+      height: 46px;
+    }
+  }
+
+  .wayvo-input[aria-invalid='true'] {
+    border-color: rgb(252 165 165 / 0.85);
+  }
+
+  .wayvo-input[aria-invalid='true']:focus {
+    border-color: rgb(252 165 165 / 0.95);
+    box-shadow: 0 0 0 3px rgb(252 165 165 / 0.18);
+  }
+
+  /* Keep Chrome/Safari autofill from painting an opaque white block. */
+  .wayvo-input:-webkit-autofill,
+  .wayvo-input:-webkit-autofill:hover,
+  .wayvo-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #fff;
+    -webkit-box-shadow: 0 0 0 1000px rgb(19 51 38 / 0.9) inset;
+    box-shadow: 0 0 0 1000px rgb(19 51 38 / 0.9) inset;
+    caret-color: #fff;
+    transition: background-color 9999s ease-out 0s;
+  }
+
+  .wayvo-field-error {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-danger);
+  }
+
+  /* --- checkbox (the "Remember me?" control) ------------------------------ */
+
+  .wayvo-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    border-radius: 4px;
+    border: 1px solid rgb(255 255 255 / 0.55);
+    background: rgb(255 255 255 / 0.12);
+    display: grid;
+    place-content: center;
+    cursor: pointer;
+    transition:
+      background-color 0.16s ease,
+      border-color 0.16s ease;
+  }
+
+  .wayvo-checkbox::after {
+    content: '';
+    width: 9px;
+    height: 5px;
+    margin-top: -2px;
+    border-left: 2px solid var(--color-ink);
+    border-bottom: 2px solid var(--color-ink);
+    transform: rotate(-45deg) scale(0);
+    transition: transform 0.14s ease;
+  }
+
+  .wayvo-checkbox:hover:not(:disabled) {
+    border-color: rgb(255 255 255 / 0.85);
+  }
+
+  .wayvo-checkbox:checked {
+    background: #fff;
+    border-color: #fff;
+  }
+
+  .wayvo-checkbox:checked::after {
+    transform: rotate(-45deg) scale(1);
+  }
+
+  .wayvo-checkbox:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.28);
+  }
+
+  .wayvo-checkbox-label {
+    font-size: 14px;
+    line-height: 1;
+    color: rgb(255 255 255 / 0.92);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  /* --- primary button (the white "LOGIN" block) --------------------------- */
+
+  .wayvo-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 46px;
+    padding: 0 20px;
+    border: 0;
+    border-radius: 7px;
+    background: #fff;
+    color: var(--color-ink);
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition:
+      background-color 0.18s ease,
+      box-shadow 0.18s ease,
+      transform 0.12s ease,
+      opacity 0.18s ease;
+  }
+
+  .wayvo-button:hover:not(:disabled) {
+    background: #e8f1ec;
+    box-shadow: 0 10px 24px -12px rgb(0 0 0 / 0.7);
+  }
+
+  .wayvo-button:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: none;
+  }
+
+  .wayvo-button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.45);
+  }
+
+  .wayvo-button:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+  }
+
+  /* --- secondary (outlined) button — used for Google sign-in ------------- */
+  /* Same geometry as the primary button, inverted fill, so the reference's
+     button proportions carry through to the OAuth affordance. */
+  .wayvo-button--outline {
+    background: rgb(255 255 255 / 0.08);
+    border: 1px solid rgb(255 255 255 / 0.45);
+    color: #fff;
+    /* Grow instead of clipping if a long provider label wraps. */
+    height: auto;
+    min-height: 46px;
+    padding-block: 8px;
+    text-align: center;
+  }
+
+  .wayvo-button--outline:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.18);
+    border-color: rgb(255 255 255 / 0.75);
+    box-shadow: none;
+  }
+
+  /* Narrow cards (portrait tablets, phones): tighter tracking keeps the
+     provider label on one line. */
+  @media (max-width: 1023px) {
+    .wayvo-button--outline {
+      font-size: 12px;
+      letter-spacing: 0.09em;
+    }
+  }
+
+  /* --- "or" rule between the two sign-in paths ---------------------------- */
+
+  .wayvo-or-rule {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: rgb(255 255 255 / 0.55);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .wayvo-or-rule::before,
+  .wayvo-or-rule::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgb(255 255 255 / 0.22);
+  }
+
+  /* --- text links --------------------------------------------------------- */
+
+  .wayvo-link {
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.2;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: opacity 0.16s ease;
+  }
+
+  .wayvo-link:hover {
+    opacity: 0.75;
+  }
+
+  .wayvo-link--quiet {
+    text-decoration: none;
+    border-bottom: 1px solid rgb(255 255 255 / 0.45);
+    padding-bottom: 1px;
+  }
+
+  .wayvo-link--quiet:hover {
+    border-bottom-color: #fff;
+    opacity: 1;
+  }
+
+  /* --- inline status messages --------------------------------------------- */
+
+  .wayvo-alert {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid rgb(255 255 255 / 0.28);
+    background: rgb(255 255 255 / 0.1);
+    font-size: 13px;
+    line-height: 1.45;
+    color: #fff;
+  }
+
+  .wayvo-alert svg {
+    flex: none;
+    margin-top: 1px;
+  }
+
+  .wayvo-alert--error {
+    border-color: rgb(252 165 165 / 0.5);
+    background: rgb(120 30 30 / 0.28);
+    color: #ffe4e4;
+  }
+
+  .wayvo-alert--success {
+    border-color: rgb(110 231 183 / 0.45);
+    background: rgb(9 78 60 / 0.34);
+    color: #d6fff2;
+  }
+
+  .wayvo-alert--info {
+    border-color: rgb(255 255 255 / 0.3);
+    background: rgb(255 255 255 / 0.1);
+  }
+
+  /* --- right-hand hero block ---------------------------------------------- */
+
+  .wayvo-hero__headline {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #fff;
+    font-size: clamp(26px, 3.05vw, 44px);
+    line-height: 1.1;
+    letter-spacing: -0.005em;
+    text-wrap: balance;
+  }
+
+  .wayvo-hero__rule {
+    width: 100%;
+    height: 2px;
+    background: rgb(255 255 255 / 0.9);
+  }
+
+  .wayvo-hero__social {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .wayvo-hero__social-link {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    background: #fff;
+    color: #101d17;
+    transition:
+      background-color 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .wayvo-hero__social-link:hover {
+    background: rgb(255 255 255 / 0.82);
+    transform: translateY(-2px);
+  }
+
+  .wayvo-hero__social-link:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.45);
+  }
+}
+
+/* ==========================================================================
+   Full-screen loader shown while the session is being restored
+   ========================================================================== */
+
+.wayvo-route-loader {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  gap: 16px;
+  min-height: 100svh;
+  grid-auto-flow: row;
+  align-content: center;
+}
+
+.wayvo-spinner {
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  border: 2px solid rgb(255 255 255 / 0.25);
+  border-top-color: #fff;
+  animation: wayvo-spin 0.7s linear infinite;
+}
+
+@keyframes wayvo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wayvo-spinner {
+    animation-duration: 2.4s;
+  }
+
+  .wayvo-button,
+  .wayvo-input,
+  .wayvo-hero__social-link {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   WAYVO PRODUCT UI  (signed-in only)
+
+   A deliberately different design language from the authentication screens
+   above. No glass, no photography, no gradients, no blur. Solid light
+   surfaces, hairline borders, small radii, restrained shadows, and colour
+   reserved for meaning rather than decoration.
+
+   The `.wayvo-*` classes belong to /login and are not touched here.
+   ========================================================================== */
+
+@layer components {
+  /* --- page scaffolding --------------------------------------------------- */
+
+  .wva-shell {
+    min-height: 100svh;
+    background: var(--color-app-bg);
+    color: var(--color-app-text);
+  }
+
+  .wva-container {
+    width: 100%;
+    max-width: 1180px;
+    margin-inline: auto;
+    padding-inline: 20px;
+  }
+
+  @media (min-width: 768px) {
+    .wva-container {
+      padding-inline: 32px;
+    }
+  }
+
+  /* --- header ------------------------------------------------------------- */
+
+  .wva-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: rgb(255 255 255 / 0.92);
+    border-bottom: 1px solid var(--color-app-border);
+  }
+
+  .wva-header__inner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 64px;
+  }
+
+  .wva-wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-app-text);
+    text-decoration: none;
+    flex: none;
+  }
+
+  .wva-nav {
+    display: none;
+    align-items: center;
+    gap: 2px;
+  }
+
+  @media (min-width: 900px) {
+    .wva-nav {
+      display: flex;
+    }
+  }
+
+  .wva-nav__link {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-app-text-muted);
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .wva-nav__link:hover {
+    background: var(--color-app-surface-alt);
+    color: var(--color-app-text);
+  }
+
+  .wva-nav__link[aria-current='page'] {
+    background: var(--color-app-accent-soft);
+    color: var(--color-app-accent);
+    font-weight: 600;
+  }
+
+  .wva-nav__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 6px;
+    border-radius: 9999px;
+    background: var(--color-app-danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* --- avatar + user menu ------------------------------------------------- */
+
+  .wva-avatar {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 9999px;
+    background: var(--color-app-accent);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    overflow: hidden;
+  }
+
+  .wva-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .wva-usermenu {
+    position: relative;
+    flex: none;
+  }
+
+  .wva-usermenu__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 8px 0 4px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-app-text);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .wva-usermenu__trigger:hover {
+    background: var(--color-app-surface-alt);
+    border-color: var(--color-app-border);
+  }
+
+  .wva-usermenu__panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    z-index: 40;
+    min-width: 232px;
+    padding: 6px;
+    border: 1px solid var(--color-app-border);
+    border-radius: 10px;
+    background: var(--color-app-surface);
+    box-shadow: 0 12px 28px -12px rgb(15 26 22 / 0.18);
+  }
+
+  .wva-usermenu__header {
+    padding: 10px 10px 12px;
+    border-bottom: 1px solid var(--color-app-border);
+    margin-bottom: 6px;
+  }
+
+  .wva-usermenu__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--color-app-text);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  .wva-usermenu__item:hover {
+    background: var(--color-app-surface-alt);
+  }
+
+  .wva-usermenu__item--danger {
+    color: var(--color-app-danger);
+  }
+
+  .wva-usermenu__item--danger:hover {
+    background: var(--color-app-danger-soft);
+  }
+
+  /* --- mobile nav --------------------------------------------------------- */
+
+  .wva-mobilenav {
+    display: block;
+    border-top: 1px solid var(--color-app-border);
+    background: var(--color-app-surface);
+  }
+
+  @media (min-width: 900px) {
+    .wva-mobilenav {
+      display: none;
+    }
+  }
+
+  .wva-mobilenav__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--color-app-border);
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--color-app-text-muted);
+    text-decoration: none;
+  }
+
+  .wva-mobilenav__link[aria-current='page'] {
+    color: var(--color-app-accent);
+    background: var(--color-app-accent-soft);
+  }
+
+  /* --- typography --------------------------------------------------------- */
+
+  .wva-h1 {
+    font-size: clamp(24px, 3vw, 30px);
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--color-app-text);
+    text-wrap: balance;
+  }
+
+  .wva-h2 {
+    font-size: 17px;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-app-text);
+  }
+
+  .wva-h3 {
+    font-size: 14px;
+    line-height: 1.4;
+    font-weight: 600;
+    color: var(--color-app-text);
+  }
+
+  .wva-body {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--color-app-text-muted);
+  }
+
+  .wva-meta {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-app-text-subtle);
+  }
+
+  .wva-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-app-text-subtle);
+  }
+
+  /* --- surfaces ----------------------------------------------------------- */
+
+  .wva-card {
+    background: var(--color-app-surface);
+    border: 1px solid var(--color-app-border);
+    border-radius: 12px;
+  }
+
+  .wva-card--pad {
+    padding: 24px;
+  }
+
+  @media (min-width: 768px) {
+    .wva-card--pad {
+      padding: 28px;
+    }
+  }
+
+  .wva-card--interactive {
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  .wva-card--interactive:hover {
+    border-color: var(--color-app-border-strong);
+    box-shadow: 0 2px 8px -2px rgb(15 26 22 / 0.07);
+  }
+
+  /* --- buttons ------------------------------------------------------------ */
+
+  .wva-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .wva-btn:focus-visible {
+    outline: 2px solid var(--color-app-accent);
+    outline-offset: 2px;
+  }
+
+  .wva-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .wva-btn--primary {
+    background: var(--color-app-accent);
+    color: #fff;
+  }
+
+  .wva-btn--primary:hover:not(:disabled) {
+    background: var(--color-app-accent-hover);
+  }
+
+  .wva-btn--secondary {
+    background: var(--color-app-surface);
+    border-color: var(--color-app-border-strong);
+    color: var(--color-app-text);
+  }
+
+  .wva-btn--secondary:hover:not(:disabled) {
+    background: var(--color-app-surface-alt);
+    border-color: var(--color-app-text-subtle);
+  }
+
+  .wva-btn--ghost {
+    background: transparent;
+    color: var(--color-app-text-muted);
+  }
+
+  .wva-btn--ghost:hover:not(:disabled) {
+    background: var(--color-app-surface-alt);
+    color: var(--color-app-text);
+  }
+
+  .wva-btn--danger {
+    background: var(--color-app-surface);
+    border-color: var(--color-app-border-strong);
+    color: var(--color-app-danger);
+  }
+
+  .wva-btn--danger:hover:not(:disabled) {
+    background: var(--color-app-danger-soft);
+    border-color: var(--color-app-danger);
+  }
+
+  .wva-btn--sm {
+    height: 34px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  /* --- form controls ------------------------------------------------------ */
+
+  .wva-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-app-text);
+  }
+
+  .wva-input,
+  .wva-select,
+  .wva-textarea {
+    display: block;
+    width: 100%;
+    min-height: 40px;
+    padding: 9px 12px;
+    border: 1px solid var(--color-app-border-strong);
+    border-radius: 8px;
+    background: var(--color-app-surface);
+    color: var(--color-app-text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.45;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  .wva-input::placeholder,
+  .wva-textarea::placeholder {
+    color: var(--color-app-text-subtle);
+  }
+
+  .wva-input:hover:not(:disabled),
+  .wva-select:hover:not(:disabled),
+  .wva-textarea:hover:not(:disabled) {
+    border-color: var(--color-app-text-subtle);
+  }
+
+  .wva-input:focus,
+  .wva-select:focus,
+  .wva-textarea:focus {
+    outline: none;
+    border-color: var(--color-app-accent);
+    box-shadow: 0 0 0 3px var(--color-app-accent-soft);
+  }
+
+  .wva-input[aria-invalid='true'],
+  .wva-select[aria-invalid='true'] {
+    border-color: var(--color-app-danger);
+  }
+
+  .wva-input[aria-invalid='true']:focus,
+  .wva-select[aria-invalid='true']:focus {
+    box-shadow: 0 0 0 3px var(--color-app-danger-soft);
+  }
+
+  .wva-field-error {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-app-danger);
+  }
+
+  /* --- status pills ------------------------------------------------------- */
+
+  .wva-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .wva-pill--neutral {
+    background: var(--color-app-surface-alt);
+    border-color: var(--color-app-border);
+    color: var(--color-app-text-muted);
+  }
+
+  .wva-pill--success {
+    background: var(--color-app-success-soft);
+    color: var(--color-app-success);
+  }
+
+  .wva-pill--warn {
+    background: var(--color-app-warn-soft);
+    color: var(--color-app-warn);
+  }
+
+  .wva-pill--danger {
+    background: var(--color-app-danger-soft);
+    color: var(--color-app-danger);
+  }
+
+  .wva-pill--info {
+    background: var(--color-app-info-soft);
+    color: var(--color-app-info);
+  }
+
+  /* --- feedback banners --------------------------------------------------- */
+
+  .wva-banner {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border: 1px solid;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .wva-banner svg {
+    flex: none;
+    margin-top: 2px;
+  }
+
+  .wva-banner--info {
+    background: var(--color-app-info-soft);
+    border-color: #b2ddff;
+    color: #1849a9;
+  }
+
+  .wva-banner--success {
+    background: var(--color-app-success-soft);
+    border-color: #abefc6;
+    color: #05603a;
+  }
+
+  .wva-banner--warn {
+    background: var(--color-app-warn-soft);
+    border-color: #fedf89;
+    color: #93370d;
+  }
+
+  .wva-banner--danger {
+    background: var(--color-app-danger-soft);
+    border-color: #fecdca;
+    color: #912018;
+  }
+
+  /* --- empty states ------------------------------------------------------- */
+
+  .wva-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 52px 24px;
+  }
+
+  .wva-empty__icon {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    margin-bottom: 18px;
+    border-radius: 12px;
+    background: var(--color-app-accent-soft);
+    color: var(--color-app-accent);
+  }
+
+  /* --- misc --------------------------------------------------------------- */
+
+  .wva-divider {
+    height: 1px;
+    background: var(--color-app-border);
+    border: 0;
+  }
+
+  .wva-skeleton {
+    background: linear-gradient(90deg, #eef1f0 25%, #f6f8f7 50%, #eef1f0 75%);
+    background-size: 200% 100%;
+    border-radius: 6px;
+    animation: wva-shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes wva-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wva-skeleton {
+      animation: none;
+    }
+  }
+}
