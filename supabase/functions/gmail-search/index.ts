@@ -118,6 +118,17 @@ Deno.serve(async (request) => {
   }
 
   const { messages = [] } = (await listRes.json()) as { messages?: { id: string }[] }
+  // Record that a real search happened, and clear any earlier error state.
+  await fetch(`${env.SUPABASE_URL}/rest/v1/gmail_connections?profile_id=eq.${userData.id}`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({ last_synced_at: new Date().toISOString(), status: 'connected' }),
+  })
+
   if (messages.length === 0) {
     return json({ emails: [], query: TRAVEL_QUERY }, 200, headers)
   }

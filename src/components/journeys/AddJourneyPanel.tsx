@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Mail, RefreshCw, ScanText, Upload } from 'lucide-react'
+import { Check, Mail, Paperclip, RefreshCw, ScanText, Upload } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { extractJourneyFromText, isUsableJourney } from '../../lib/bookingParser'
 import { readDocument, releaseOcr, describeAccepted, validateFile } from '../../services/documentReader'
@@ -8,10 +8,12 @@ import { draftFromExtraction, findPotentialDuplicates, saveJourney, type Journey
 import {
   attachmentToFile,
   beginGmailConnect,
+  disconnectGmail,
   extractFromEmail,
   getGmailConnection,
   GmailError,
   searchGmail,
+  type GmailCandidateKind,
   type GmailConnection,
   type GmailEmailSummary,
 } from '../../services/gmailService'
@@ -22,12 +24,15 @@ import { JourneyReview } from './JourneyReview'
  * The "Add a journey" panel.
  *
  * Two real paths into the same review screen:
- *   • Upload   → file picker → Supabase Storage → text extraction → review
- *   • Gmail    → Google consent → Gmail search → pick an email → review
+ *   • Upload  → file picker → Supabase Storage → text extraction → review
+ *   • Gmail   → Google consent → Gmail search → pick an email → review
  *
- * Nothing is written to `trips` until the traveller confirms, and the original
- * document is stored before extraction so it is never lost even if the parse
- * fails.
+ * Gmail is a completely separate authorisation from Supabase's Google *login*.
+ * A Wayvo account created with Google says nothing about Gmail access, so the
+ * traveller is asked for `gmail.readonly` explicitly, on the server, and can
+ * revoke it in their own Google account at any time.
+ *
+ * Nothing is written to `trips` until the traveller confirms.
  */
 
 type Stage =
@@ -55,13 +60,16 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [connection, setConnection] = useState<GmailConnection | null>(null)
+  const [connectionChecked, setConnectionChecked] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  // Free the OCR worker when the panel goes away.
   useEffect(() => () => void releaseOcr(), [])
 
   useEffect(() => {
-    void getGmailConnection().then(setConnection).catch(() => setConnection(null))
+    void getGmailConnection()
+      .then(setConnection)
+      .catch(() => setConnection(null))
+      .finally(() => setConnectionChecked(true))
   }, [])
 
   /* ======================================================================
@@ -104,7 +112,6 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
     try {
       stored = await uploadTravelDocument(user.id, file, extraction, { status: 'processed' }, 'upload')
     } catch (cause) {
-      // A storage failure should not block a journey the traveller can see.
       console.warn('Document storage failed:', cause)
     }
 
@@ -131,9 +138,13 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
     setError(null)
     setStage({ kind: 'gmail-connecting' })
     try {
-      await beginGmailConnect() // navigates away
+      await beginGmailConnect() // navigates to Google
     } catch (cause) {
-      setError(cause instanceof GmailError ? cause.message : 'Gmail could not be connected right now.')
+      setError(
+        cause instanceof GmailError
+          ? cause.message
+          : 'Gmail could not be connected right now. You can upload a booking instead.',
+      )
       setStage({ kind: 'choose' })
     }
   }
@@ -145,9 +156,18 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
       const emails = await searchGmail()
       setStage({ kind: 'gmail-list', emails, loading: false, error: null })
     } catch (cause) {
-      const message = cause instanceof GmailError ? cause.message : 'Gmail could not be searched right now.'
+      const message =
+        cause instanceof GmailError
+          ? cause.message
+          : 'Gmail could not be searched right now. Please try again.'
       setStage({ kind: 'gmail-list', emails: [], loading: false, error: message })
     }
+  }
+
+  async function handleDisconnectGmail() {
+    await disconnectGmail().catch(() => undefined)
+    setConnection(null)
+    setStage({ kind: 'choose' })
   }
 
   async function handlePickEmail(email: GmailEmailSummary) {
@@ -158,10 +178,10 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
     try {
       const extracted = await extractFromEmail(email.id)
 
-      // Prefer the attached ticket: a PDF or image is more reliable than an
+      // Prefer an attached ticket: a PDF or image is more reliable than an
       // email body, which is often heavily templated.
       let text = extracted.text
-      let documentName: string | null = `${extracted.subject || 'booking'}`.slice(0, 80)
+      let documentName: string | null = extracted.subject?.slice(0, 80) ?? null
       let file: File | null = null
 
       if (extracted.attachment) {
@@ -259,7 +279,10 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
               <p className="font-semibold">This journey may already exist in Wayvo.</p>
               <p className="mt-1">
                 We found{' '}
-                {stage.duplicates.map((duplicate) => `"${duplicate.trip.title}" (${duplicate.reason})`).join(', ')}.
+                {stage.duplicates
+                  .map((duplicate) => `"${duplicate.trip.title}" (${duplicate.reason})`)
+                  .join(', ')}
+                .
               </p>
               <p className="mt-1.5">You can import it anyway, or close this and open the existing journey.</p>
             </Banner>
@@ -274,12 +297,13 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
           documentName={stage.documentName}
           saving={saving}
           saveError={null}
-          onChange={(draft) => setStage((current) => (current.kind === 'review' ? { ...current, draft } : current))}
+          onChange={(draft) =>
+            setStage((current) => (current.kind === 'review' ? { ...current, draft } : current))
+          }
           onEdit={(draft) =>
-            setStage((current) => {
-              if (current.kind !== 'review') return current
-              return { ...current, draft, provenance: current.draft.provenance }
-            })
+            setStage((current) =>
+              current.kind === 'review' ? { ...current, draft, provenance: current.draft.provenance } : current,
+            )
           }
           onConfirm={() => handleConfirm(stage.draft, stage.document)}
           onCancel={onClose}
@@ -304,7 +328,6 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
         </div>
       )}
 
-      {/* ---- busy states -------------------------------------------------- */}
       {stage.kind === 'reading' && (
         <div className="mb-4">
           <Banner tone="info">
@@ -343,7 +366,11 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
 
           {!stage.loading && stage.emails.length > 0 && (
             <>
-              <h3 className="wva-h3 mb-3">Travel bookings found</h3>
+              <h3 className="wva-h3 mb-1">Travel bookings found</h3>
+              <p className="wva-meta mb-3">
+                {stage.emails.length} recent {stage.emails.length === 1 ? 'email' : 'emails'} matched. Only the sender,
+                subject and date are shown &mdash; Wayvo reads the full message only when you choose one.
+              </p>
               <ul className="flex flex-col gap-2.5">
                 {stage.emails.map((email) => (
                   <li key={email.id}>
@@ -382,19 +409,44 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
           <button
             type="button"
             onClick={connection ? handleSearchGmail : handleConnectGmail}
+            disabled={connectionChecked && !connection && false}
             className="wva-card wva-card--interactive flex flex-col items-start gap-2 px-4 py-5 text-left"
           >
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-app-accent-soft text-app-accent">
-              {connection ? <RefreshCw size={17} strokeWidth={2} aria-hidden="true" /> : <Mail size={17} strokeWidth={2} aria-hidden="true" />}
+              {connection ? (
+                <RefreshCw size={17} strokeWidth={2} aria-hidden="true" />
+              ) : (
+                <Mail size={17} strokeWidth={2} aria-hidden="true" />
+              )}
             </span>
             <span className="wva-h3">Import from Gmail</span>
             <span className="text-[13px] leading-relaxed text-app-text-muted">
               {connection
                 ? `Connected as ${connection.gmail_address ?? 'your account'}. Wayvo will look for booking emails.`
-                : 'Connect Gmail to let Wayvo find travel booking confirmations and itineraries. Read-only access.'}
+                : 'Connect Gmail to let Wayvo find travel booking confirmations and itineraries.'}
             </span>
-            {connection && <Pill tone="success">Connected</Pill>}
+            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+              {connection && (
+                <Pill tone="success">
+                  <Check size={12} strokeWidth={3} aria-hidden="true" />
+                  Connected
+                </Pill>
+              )}
+              {/* The scope is restated once connected, not just before. */}
+              <Pill tone="neutral">Read-only access</Pill>
+            </div>
           </button>
+        </div>
+      )}
+
+      {stage.kind === 'choose' && connection && (
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <p className="text-[12px] text-app-text-subtle">
+            Wayvo can read your booking emails. It cannot send, delete or change anything.
+          </p>
+          <Button variant="ghost" size="sm" onClick={handleDisconnectGmail}>
+            Disconnect
+          </Button>
         </div>
       )}
 
@@ -423,24 +475,56 @@ export function AddJourneyPanel({ onClose, onSaved }: Props) {
 
 /* -------------------------------------------------------------------------- */
 
+const KIND_LABEL: Record<GmailCandidateKind, string> = {
+  train: 'Train booking',
+  flight: 'Flight booking',
+  bus: 'Bus booking',
+  hotel: 'Hotel booking',
+  itinerary: 'Travel itinerary',
+  booking: 'Booking email',
+}
+
+const KIND_ICON: Record<GmailCandidateKind, string> = {
+  train: '🚆',
+  flight: '✈️',
+  bus: '🚌',
+  hotel: '🏨',
+  itinerary: '🧳',
+  booking: '📄',
+}
+
 function EmailRow({ email, onImport }: { email: GmailEmailSummary; onImport: () => void }) {
-  const sender = email.from.replace(/<[^>]+>/, '').trim()
-  const kind = classifyEmail(email.subject, sender)
+  const kind = email.hint?.kind ?? 'booking'
 
   return (
     <article className="wva-card wva-card--interactive px-4 py-3.5">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 text-[14px] font-semibold text-app-text">
-            <span aria-hidden="true">{kind.icon}</span>
-            <span className="truncate">{kind.label}</span>
+            <span aria-hidden="true">{KIND_ICON[kind]}</span>
+            <span className="truncate">{KIND_LABEL[kind]}</span>
+            {email.hasAttachment && (
+              <span title="Has a PDF or image attachment" className="inline-flex text-app-text-subtle">
+                <Paperclip size={13} strokeWidth={2} aria-label="Has an attachment" />
+              </span>
+            )}
           </p>
+
           <p className="mt-1 truncate text-[13px] text-app-text-muted">{email.subject}</p>
-          <p className="mt-0.5 text-[12px] text-app-text-subtle">
-            {sender} · {shortDate(email.date)}
-            {email.snippet ? ` · ${email.snippet.slice(0, 90)}` : ''}
+
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-app-text-subtle">
+            <span>{email.hint?.operator || email.from}</span>
+            <span aria-hidden="true">·</span>
+            <span>{shortDate(email.date)}</span>
+            {email.hint?.status && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{email.hint.status}</span>
+              </>
+            )}
           </p>
         </div>
+
         <Button size="sm" onClick={onImport}>
           Import journey
         </Button>
@@ -449,24 +533,14 @@ function EmailRow({ email, onImport }: { email: GmailEmailSummary; onImport: () 
   )
 }
 
-const CLASSIFIERS: { test: RegExp; label: string; icon: string }[] = [
-  { test: /(train|railway|irctc|rail)/i, label: 'Train booking', icon: '🚆' },
-  { test: /(flight|airline|air|boarding pass|check-?in)/i, label: 'Flight booking', icon: '✈️' },
-  { test: /(bus|coach|volvo)/i, label: 'Bus booking', icon: '🚌' },
-  { test: /(hotel|resort|reservation|room|stay)/i, label: 'Hotel booking', icon: '🏨' },
-  { test: /(itinerary|travel details|e-?ticket)/i, label: 'Travel itinerary', icon: '🧳' },
-]
-
-function classifyEmail(subject: string, sender: string): { label: string; icon: string } {
-  const haystack = `${subject} ${sender}`
-  for (const classifier of CLASSIFIERS) {
-    if (classifier.test.test(haystack)) return { label: classifier.label, icon: classifier.icon }
-  }
-  return { label: 'Booking email', icon: '📄' }
-}
-
 function shortDate(raw: string): string {
   const date = new Date(raw)
   if (Number.isNaN(date.getTime())) return raw
-  return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
+  return new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
 }

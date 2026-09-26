@@ -57,6 +57,72 @@ const check = (name, pass, detail = '') => {
 }
 
 /* ==========================================================================
+ * 1b. Railway operator names
+ *
+ * A ticket names its operating zone ("Eastern Railways"). An earlier
+ * alternation listed "indian railways" but no other zone, so the bare
+ * "railways" branch won and the qualifier was dropped.
+ * ========================================================================== */
+{
+  const ticket = (operatorLine: string) => `
+    Rail Reservation System
+    ${operatorLine}
+    Train No: 12123
+    From: MUMBAI CENTRAL
+    To: HOWRAH
+    Departure: 28-Sep-2026 07:10
+    Passenger: RAHUL SHARMA
+    Status: CONFIRMED
+  `
+
+  const cases: [string, RegExp | null][] = [
+    ['Eastern Railways', /^Eastern Railways$/i],
+    ['Eastern Railway', /^Eastern Railway$/i],
+    ['INDIAN RAILWAYS', /^Indian Railways$/i],
+    ['Konkan Railway', /^Konkan Railway$/i],
+    ['North Western Railway', /^North Western Railway$/i],
+    ['Eastern North Eastern Railway', /^Eastern North Eastern Railway$/i],
+    ['Metro Rail', /^Metro Rail$/i],
+    ['IRCTC', /^IRCTC$/i],
+  ]
+
+  for (const [line, expected] of cases) {
+    const got = extractJourneyFromText(ticket(line)).fields.operator ?? null
+    check(`railway operator: "${line}"`, expected ? expected.test(String(got)) : got === null, String(got))
+  }
+
+  // A station is a place, not a company: it must not be reported as the operator.
+  for (const line of ['Nearest Railway Station', 'Proceed to Railway Stn']) {
+    const got = extractJourneyFromText(ticket(line)).fields.operator ?? null
+    check(`"${line}" is not treated as an operator`, got === null, String(got))
+  }
+
+  // The fixture header itself is "Rail Reservation System": portal boilerplate
+  // must not be mistaken for an operator either.
+  {
+    const got = extractJourneyFromText(ticket('')).fields.operator ?? null
+    check('portal boilerplate is not treated as an operator', got === null, String(got))
+  }
+
+  // IRCTC sells the ticket; the zone runs it. The more specific name wins even
+  // when the portal is mentioned first.
+  {
+    const both = extractJourneyFromText(`
+      IRCTC e-Ticket
+      Eastern Railways
+      Train No: 12123
+      From: MUMBAI CENTRAL
+      To: HOWRAH
+    `)
+    check(
+      'a named zone is preferred over the booking portal',
+      /^Eastern Railways$/i.test(both.fields.operator ?? ''),
+      String(both.fields.operator),
+    )
+  }
+}
+
+/* ==========================================================================
  * 2. Flight confirmation email
  * ========================================================================== */
 {

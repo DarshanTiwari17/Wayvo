@@ -41,14 +41,25 @@ export function JourneysPage() {
     })
   }
 
-  // The Gmail callback returns here with a result in the query string.
+  // The Gmail callback returns here with a result in the query string. It is
+  // read once and then scrubbed, so a banner from a past attempt cannot stick
+  // around or re-fire on a later render.
   const gmailResult = searchParams.get('gmail')
   useEffect(() => {
     if (!gmailResult) return
+
     if (gmailResult === 'connected') {
-      setFlag('gmail', false)
-      setFlag('add', true)
       void getGmailConnection().then(setGmail)
+      setSearchParams((params) => {
+        params.delete('gmail')
+        params.set('add', '1')
+        return params
+      })
+    } else {
+      setSearchParams((params) => {
+        params.delete('gmail')
+        return params
+      })
     }
   }, [gmailResult])
 

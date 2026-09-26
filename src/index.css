@@ -528,6 +528,14 @@
     text-wrap: balance;
   }
 
+  /* The wordmark is one short word rather than a wrapped sentence, so it is set
+     larger and with tighter tracking to hold the same optical weight. */
+  .wayvo-hero__wordmark {
+    font-size: clamp(44px, 6.2vw, 92px);
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
   .wayvo-hero__rule {
     width: 100%;
     height: 2px;

@@ -1,12 +1,16 @@
 /**
- * GET /functions/v1/gmail-callback?code=...&state=...&session=<jwt>
+ * GET /functions/v1/gmail-callback?code=...&state=...
  *
- * Step 2. Google redirects here. This function holds the client secret, swaps
- * the code for tokens, stores the refresh token, and sends the traveller back
- * to the app.
+ * Step 2. Google redirects here after the traveller approves access.
  *
- * The refresh token is written with the service role into `gmail_connections`,
- * a table the browser is deliberately not granted access to.
+ * This is the only function that must be deployed with `--no-verify-jwt`:
+ * the browser arrives from Google, not from supabase-js, so there is no
+ * Supabase JWT to verify. It is authenticated by the signed, expiring `state`
+ * instead, which carries the Wayvo profile id and nothing sensitive.
+ *
+ * The Google client secret is exchanged for tokens here and never leaves the
+ * server. The refresh token is written with the service role into
+ * `gmail_connections`, a table the browser is not granted access to.
  */
 import {
   corsHeaders,
@@ -15,6 +19,7 @@ import {
   json,
   type Env,
 } from '../_shared/gmail.ts'
+import { safeReturnTo, verifyState } from '../_shared/state.ts'
 
 Deno.serve(async (request) => {
   const env = {
@@ -29,21 +34,25 @@ Deno.serve(async (request) => {
   const headers = corsHeaders(request.headers.get('origin'), env)
   const url = new URL(request.url)
 
-  // Where the browser ends up either way.
-  const appOrigin = env.ALLOWED_REDIRECT_ORIGINS.split(',')[0]?.trim() || 'http://localhost:5173'
-  const back = (params: Record<string, string>) =>
-    `${appOrigin}/journeys?${new URLSearchParams(params).toString()}`
+  const fallback = `${env.SUPABASE_URL}`
+  const back = (params: Record<string, string>) => {
+    const target = safeReturnTo(fallback, env.ALLOWED_REDIRECT_ORIGINS)
+    return `${target}/journeys?${new URLSearchParams(params).toString()}`
+  }
   const redirectBack = (params: Record<string, string>) => Response.redirect(back(params), 302)
+
+  // The traveller pressed "Decline" on Google's screen.
+  if (url.searchParams.get('error')) {
+    return redirectBack({ gmail: 'denied', reason: url.searchParams.get('error')! })
+  }
 
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
 
-  if (url.searchParams.get('error')) {
-    return redirectBack({ gmail: 'denied', reason: url.searchParams.get('error')! })
-  }
   if (!code || !state) {
     return json({ error: 'invalid_request', message: 'Missing code or state.' }, 400, headers)
   }
+
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.SUPABASE_SERVICE_ROLE_KEY) {
     return json(
       { error: 'not_configured', message: 'Gmail import is not configured on this project yet.' },
@@ -52,19 +61,17 @@ Deno.serve(async (request) => {
     )
   }
 
-  // The caller's JWT rides through the flow in `session` so the connection can
-  // be attributed to them without trusting the `state` round trip.
-  const jwt =
-    url.searchParams.get('session') ?? request.headers.get('Authorization')?.replace('Bearer ', '') ?? ''
+  // The signed state is the only thing trusted here. It is verified before the
+  // authorisation code is spent, and it expires on its own.
+  const verified = await verifyState(state, env.SUPABASE_SERVICE_ROLE_KEY)
 
-  if (!jwt) return redirectBack({ gmail: 'error', reason: 'no_session' })
+  if (!verified.ok) {
+    const reason = verified.reason === 'expired' ? 'expired' : 'invalid_state'
+    return redirectBack({ gmail: 'error', reason })
+  }
 
-  const verify = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { authorization: `Bearer ${jwt}`, apikey: env.SUPABASE_ANON_KEY },
-  })
-  if (!verify.ok) return redirectBack({ gmail: 'error', reason: 'unauthorised' })
-
-  const { data: userData } = (await verify.json()) as { id: string }
+  const profileId = verified.payload.p
+  const returnTo = safeReturnTo(verified.payload.r, env.ALLOWED_REDIRECT_ORIGINS)
 
   try {
     const tokens = await exchangeCodeForTokens(
@@ -84,24 +91,34 @@ Deno.serve(async (request) => {
         prefer: 'resolution=merge-duplicates,return=minimal',
       },
       body: JSON.stringify({
-        profile_id: userData.id,
+        profile_id: profileId,
         gmail_address: gmailAddress,
         scopes: tokens.scope,
         status: 'connected',
         refresh_token: tokens.refresh_token,
         access_token: tokens.access_token,
         token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+        last_synced_at: new Date().toISOString(),
       }),
     })
 
     if (!store.ok) {
       console.error('Could not store the Gmail connection:', store.status, (await store.text()).slice(0, 300))
-      return redirectBack({ gmail: 'error', reason: 'storage' })
+      return Response.redirect(
+        `${returnTo}?${new URLSearchParams({ gmail: 'error', reason: 'storage' }).toString()}`,
+        302,
+      )
     }
 
-    return redirectBack({ gmail: 'connected' })
+    return Response.redirect(
+      `${returnTo}?${new URLSearchParams({ gmail: 'connected' }).toString()}`,
+      302,
+    )
   } catch (cause) {
     console.error('Gmail connection failed:', cause)
-    return redirectBack({ gmail: 'error', reason: 'exchange' })
+    return Response.redirect(
+      `${returnTo}?${new URLSearchParams({ gmail: 'error', reason: 'exchange' }).toString()}`,
+      302,
+    )
   }
 })

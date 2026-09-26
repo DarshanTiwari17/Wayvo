@@ -1,0 +1,66 @@
+# Supabase configuration for the Wayvo project.
+#
+# Tracked in git; it contains no secrets. Credentials belong in:
+#   .env            → VITE_* browser config (anon key only)
+#   .env.edge       → function-only secrets (service role, Google client secret)
+
+project_id = "wayvo"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+# The sign-up trigger in 0001_profiles.sql relies on raw_user_meta_data.
+site_url = "http://localhost:5173"
+additional_redirect_urls = [
+  "http://localhost:5173/reset-password",
+  "http://localhost:5173/dashboard",
+  "http://localhost:5173/journeys",
+]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+# Turning this off lets a new account in immediately, but the journeys flow is
+# clearer with real verification. See supabase/JOURNEY-IMPORT.md.
+enable_confirmations = true
+
+[storage]
+enabled = true
+file_size_limit = "10MiB"
+
+# ---------------------------------------------------------------------------
+# Edge Functions
+#
+# verify_jwt = true (the default) is REQUIRED for the three functions the browser
+# calls through supabase-js. Only gmail-callback is exempt, because Google
+# redirects the browser there directly and no Supabase JWT is present; it is
+# authenticated by its signed, expiring `state` instead.
+# ---------------------------------------------------------------------------
+
+[functions.gmail-connect]
+verify_jwt = true
+
+[functions.gmail-search]
+verify_jwt = true
+
+[functions.gmail-extract]
+verify_jwt = true
+
+[functions.gmail-callback]
+verify_jwt = false

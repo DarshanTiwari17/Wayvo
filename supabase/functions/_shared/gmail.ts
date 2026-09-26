@@ -135,6 +135,55 @@ export interface GmailListItem {
   date: string
   snippet: string
   hasAttachment: boolean
+  /**
+   * Derived from the sender and subject only — no message body is fetched for
+   * the list, so unrelated email content is never read.
+   */
+  hint: {
+    kind: CandidateKind
+    operator: string | null
+    status: string | null
+  }
+}
+
+export type CandidateKind = 'train' | 'flight' | 'bus' | 'hotel' | 'itinerary' | 'booking'
+
+const KIND_PATTERNS: { test: RegExp; kind: CandidateKind }[] = [
+  { test: /\b(train|railway|rail|irctc|e-?ticket)\b/i, kind: 'train' },
+  { test: /\b(flight|airline|airways|boarding pass|check-?in|airport)\b/i, kind: 'flight' },
+  { test: /\b(bus|coach|volvo)\b/i, kind: 'bus' },
+  { test: /\b(hotel|resort|reservation|room|check-?in|check-?out|night stay)\b/i, kind: 'hotel' },
+  { test: /\b(itinerary|travel details|journey)\b/i, kind: 'itinerary' },
+]
+
+/** The sender's display name, cleaned up: "IRCTC <no-reply@irctc.co.in>" -> "IRCTC". */
+export function senderName(from: string): string {
+  const angle = from.indexOf('<')
+  const name = (angle >= 0 ? from.slice(0, angle) : from).replace(/["']/g, '').trim()
+  return name.length >= 2 ? name : from.trim()
+}
+
+const STATUS_PATTERNS: { test: RegExp; label: string }[] = [
+  { test: /\b(confirmed|ticket(s)? issued|booking confirmed|success)\b/i, label: 'Confirmed' },
+  { test: /\b(cancelled|canceled)\b/i, label: 'Cancelled' },
+  { test: /\b(waitlist(ed)?)\b/i, label: 'Waitlisted' },
+  { test: /\b(rescheduled|change(d)?|delay(ed)?)\b/i, label: 'Changed' },
+  { test: /\b(itinerary|travel details)\b/i, label: 'Itinerary' },
+  { test: /\b(refund(ed)?)\b/i, label: 'Refunded' },
+]
+
+/**
+ * Classifies a candidate from its envelope only.
+ *
+ * Deliberately conservative: a route is NOT guessed here. Reading it would mean
+ * fetching every result's body, and the traveller picks one email anyway — the
+ * route appears on the review screen after that.
+ */
+export function deriveHint(from: string, subject: string): GmailListItem['hint'] {
+  const haystack = `${subject} ${from}`
+  const kind = KIND_PATTERNS.find((entry) => entry.test.test(haystack))?.kind ?? 'booking'
+  const status = STATUS_PATTERNS.find((entry) => entry.test.test(subject))?.label ?? null
+  return { kind, operator: senderName(from), status }
 }
 
 /** Decodes base64url and parses the RFC 2822 headers we need. */
@@ -145,15 +194,19 @@ export function parseListItem(
   const header = (name: string) =>
     payload.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? ''
 
+  const from = header('From')
+  const subject = header('Subject') || '(no subject)'
+
   return {
     id,
-    from: header('From'),
-    subject: header('Subject') || '(no subject)',
+    from,
+    subject,
     date: header('Date'),
-    // Gmail's snippet is a short plaintext preview. It is used only to help the
-    // traveller recognise the booking; the full body is never fetched here.
-    snippet: (payload.snippet ?? '').replace(/\s+/g, ' ').trim().slice(0, 240),
-    hasAttachment: (payload.labelIds ?? []).includes('ATTACHMENT') || /attachment/i.test(payload.snippet ?? ''),
+    // Gmail's snippet is a short plaintext preview, used only so the traveller
+    // can recognise which booking this is. The full body is never fetched here.
+    snippet: (payload.snippet ?? '').replace(/\s+/g, ' ').trim().slice(0, 160),
+    hasAttachment: (payload.labelIds ?? []).includes('ATTACHMENT') || /attachment|\.pdf/i.test(payload.snippet ?? ''),
+    hint: deriveHint(from, subject),
   }
 }
 

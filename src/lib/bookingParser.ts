@@ -297,6 +297,38 @@ function findPnr(text: string): { pnr: string | null; reference: string | null }
 const AIRLINES =
   /indian airlines|air india|indigo|akasa|akasa air|go first|gofirst|spicejet|vistara|emirates|qatar airways|lufthansa|british airways|klm|air canada|united|delta|american airlines|singapore airlines|ryanair|easyjet|jet2|thomas cook|makeMyTrip|cleartrip|goibibo/i
 
+/**
+ * The operating railway, e.g. "Eastern Railways", "Konkan Railway", "IRCTC".
+ *
+ * The zone qualifier and the noun are matched separately rather than as a fixed
+ * list of full names, so a ticket reading "Eastern Railways" yields the whole
+ * name instead of collapsing to a bare "Railways". Qualifiers are longest-first
+ * for readability; the engine backtracks correctly either way.
+ *
+ * `rail(?:way)?s?` rather than `railways?`, because the latter would require
+ * the "way" and so would never match a bare "Rail".
+ */
+const RAILWAY_ZONE =  /\b(?:eastern north eastern|south east central|north eastern|north western|north central|eastern central|south eastern|south western|southern central|western central|indian|northern|western|eastern|central|southern|konkan|metro|national)\s+rail(?:way)?s?\b/i
+
+/**
+ * Used only when no zone is named.
+ *
+ * A bare "Railway"/"Railways" is deliberately not accepted: it names no company,
+ * and on a real ticket it comes from portal boilerplate such as "Railway
+ * Reservation System". Returning null is more honest than inventing an operator.
+ */
+const RAILWAY_FALLBACK = /\birctc\b/i
+
+/**
+ * A named zone is preferred over "IRCTC" on purpose: IRCTC is the portal that
+ * sells the ticket, whereas the zone is the company that runs it. This needs two
+ * passes, because regex alternation resolves leftmost-first — a single pattern
+ * would return whichever name appeared earlier in the document.
+ */
+function findRailwayOperator(text: string): RegExpMatchArray | null {
+  return text.match(RAILWAY_ZONE) ?? text.match(RAILWAY_FALLBACK)
+}
+
 function findTransport(text: string): {
   mode: TransportMode | null
   serviceNumber: string | null
@@ -312,10 +344,8 @@ function findTransport(text: string): {
 
   if (trainWord) {
     const number = text.match(/\btrain\s*(?:no\.?|number)?\s*[:#-]?\s*([1-9]\d{4})\b/i)
-    const operator = text.match(
-      /\b(indian railways|railways|irctc|konkan railway|western railway|east coast|central railway|northern railway|metro rail|national railways)\b/i,
-    )
-    return { mode: 'train', serviceNumber: number?.[1] ?? null, operator: operator ? titleish(operator[1]) : null }
+    const operator = findRailwayOperator(text)
+    return { mode: 'train', serviceNumber: number?.[1] ?? null, operator: operator ? titleish(operator[0]) : null }
   }
 
   if (hotelWord) {

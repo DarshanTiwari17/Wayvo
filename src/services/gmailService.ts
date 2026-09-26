@@ -4,9 +4,13 @@
  * Every call goes to an Edge Function. The Google client secret and the Gmail
  * refresh token live only on the server, so nothing sensitive is ever held in
  * the browser, in localStorage, or in this bundle.
+ *
+ * The OAuth round trip carries an opaque, signed `state` value. No access
+ * token, refresh token or Supabase JWT is ever placed in a URL.
  */
 import { getSupabase } from '../lib/supabase'
 
+/** The six columns the browser is allowed to see on `gmail_connections`. */
 export interface GmailConnection {
   profile_id: string
   gmail_address: string | null
@@ -17,6 +21,8 @@ export interface GmailConnection {
   updated_at: string
 }
 
+export type GmailCandidateKind = 'train' | 'flight' | 'bus' | 'hotel' | 'itinerary' | 'booking'
+
 export interface GmailEmailSummary {
   id: string
   from: string
@@ -24,6 +30,15 @@ export interface GmailEmailSummary {
   date: string
   snippet: string
   hasAttachment: boolean
+  /**
+   * Derived server-side from the sender and subject alone. No message body is
+   * read to build this list, so unrelated email content is never fetched.
+   */
+  hint: {
+    kind: GmailCandidateKind
+    operator: string | null
+    status: string | null
+  }
 }
 
 export interface GmailAttachmentSummary {
@@ -64,7 +79,7 @@ export class GmailError extends Error {
   }
 }
 
-/** A function that has not been deployed answers 404, not JSON. */
+/** A function that was never deployed answers 404, not JSON. */
 function normalise(error: { message: string } | null, status: number): GmailError {
   const code = safeParseCode(error?.message) ?? inferCode(status)
   return new GmailError(code)
@@ -81,19 +96,16 @@ function safeParseCode(raw?: string): GmailErrorCode | null {
 }
 
 function inferCode(status: number): GmailErrorCode {
-  if (status === 404 || status === 503) return 'not_deployed'
+  if (status === 404 || status === 502 || status === 503) return 'not_deployed'
   if (status === 409) return 'not_connected'
   if (status === 401) return 'reauth_required'
   return 'not_deployed'
 }
 
-/* -------------------------------------------------------------------------- */
-
 async function invoke<T>(name: string, body?: Record<string, unknown>): Promise<T> {
   const supabase = getSupabase()
   const { data, error } = await supabase.functions.invoke(name, { body: body ?? {} })
 
-  // A missing function surfaces as a generic error rather than JSON.
   if (error) throw normalise(error as { message: string }, 404)
   if (!data) throw new GmailError('not_deployed')
   return data as T
@@ -101,7 +113,10 @@ async function invoke<T>(name: string, body?: Record<string, unknown>): Promise<
 
 /* -------------------------------------------------------------------------- */
 
-/** Reads the connection row. Only the safe columns are readable by the client. */
+/**
+ * Reads the connection row. If the table or the function is missing this
+ * returns `null`, which the UI renders as "not connected" rather than an error.
+ */
 export async function getGmailConnection(): Promise<GmailConnection | null> {
   const supabase = getSupabase()
   const { data, error } = await supabase
@@ -113,21 +128,25 @@ export async function getGmailConnection(): Promise<GmailConnection | null> {
   return data as GmailConnection | null
 }
 
+/** Disconnecting deletes the row, which removes the stored refresh token. */
 export async function disconnectGmail(): Promise<void> {
   const supabase = getSupabase()
-  // Deletes the row, which removes the stored refresh token with it.
-  await supabase.from('gmail_connections').delete().neq('profile_id', '00000000-0000-0000-0000-000000000000')
+  await supabase
+    .from('gmail_connections')
+    .delete()
+    .neq('profile_id', '00000000-0000-0000-0000-000000000000')
 }
 
 /**
- * Begins the Google consent flow by navigating the browser to Google's consent
- * screen. Returns nothing: on success the user leaves the app.
+ * Starts the Google consent flow by navigating to Google's consent screen.
+ *
+ * supabase-js attaches the signed-in user's JWT to this request and the Edge
+ * Function verifies it, so the connection is attributed to the right person
+ * without any token appearing in a URL. This promise never resolves: the browser
+ * is leaving the app.
  */
 export async function beginGmailConnect(): Promise<never> {
   const supabase = getSupabase()
-  const { data: sessionData } = await supabase.auth.getSession()
-  const jwt = sessionData.session?.access_token
-  if (!jwt) throw new GmailError('reauth_required')
 
   const { data, error } = await supabase.functions.invoke('gmail-connect', {
     body: { redirectTo: `${window.location.origin}/journeys` },
@@ -135,25 +154,20 @@ export async function beginGmailConnect(): Promise<never> {
 
   if (error || !data) throw normalise((error as { message: string }) ?? null, 404)
 
-  const { url, state, returnTo } = data as { url: string; state: string; scopes: string; returnTo?: string }
+  const { url } = data as { url?: string }
+  if (!url) throw new GmailError('not_deployed')
 
-  // Carry the JWT through the round trip so the callback can attribute the
-  // connection. It lives in the URL for the length of one redirect only.
-  const target = new URL(url)
-  target.searchParams.set('session', jwt)
-  target.searchParams.set('state', state)
-  target.searchParams.set('return_to', returnTo ?? '')
-
-  window.location.assign(target.toString())
-  // Never resolves: the browser is navigating away.
+  window.location.assign(url)
   return new Promise<never>(() => {})
 }
 
+/** Searches the connected mailbox for likely booking emails. */
 export async function searchGmail(): Promise<GmailEmailSummary[]> {
   const { emails } = await invoke<{ emails: GmailEmailSummary[] }>('gmail-search')
   return emails ?? []
 }
 
+/** Fetches the one message the traveller chose, plus any ticket attachment. */
 export async function extractFromEmail(
   messageId: string,
   attachmentId?: string,

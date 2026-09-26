@@ -59,13 +59,9 @@ export function AuthShell({ children }: AuthShellProps) {
         </div>
 
         <aside className="w-full max-w-[38.5rem]">
-          <h1 className="wayvo-hero__headline">
-            <span className="block">The goal of life is</span>
-            <span className="block">living in agreement</span>
-            <span className="block">with nature.</span>
-          </h1>
+          <h1 className="wayvo-hero__headline wayvo-hero__wordmark">Wayvo</h1>
 
-          <div className="mt-8 md:mt-24">
+          <div className="mt-8 md:mt-14">
             <div className="wayvo-hero__rule" />
           </div>
 
