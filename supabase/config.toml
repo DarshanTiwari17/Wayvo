@@ -73,6 +73,10 @@ verify_jwt = false
 # This separate function performs its own Supabase JWT validation.
 verify_jwt = false
 
+[functions.wayvo-recovery-simulation]
+# The handler validates the caller JWT itself so browser OPTIONS preflights work.
+verify_jwt = false
+
 [functions.gmail-callback]
 verify_jwt = false
 

@@ -1,7 +1,48 @@
-const GATEWAY_URL = 'https://ai.tcetcercd.in/v1/chat/completions'
-const MODEL = 'qwen3.6'
+const GATEWAY_URL = 'https://api.nugen.in/api/v3/inference/chat/completions'
+const MODEL = 'qwen-v2p5-0p5b-instruct'
 const MAX_MESSAGES = 12
 const MAX_MESSAGE_LENGTH = 2000
+
+function extractNugenText(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+
+  const candidate = payload as {
+    choices?: Array<{ message?: { content?: unknown } }>
+    output?: Array<{ content?: Array<{ text?: string } | string> }>
+    message?: { content?: unknown }
+    content?: unknown
+  }
+
+  const fromChoices = candidate.choices?.[0]?.message?.content
+  if (typeof fromChoices === 'string' && fromChoices.trim()) return fromChoices.trim()
+  if (Array.isArray(fromChoices)) {
+    const text = fromChoices
+      .map((item) => (typeof item === 'string' ? item : typeof item?.text === 'string' ? item.text : ''))
+      .join('')
+      .trim()
+    if (text) return text
+  }
+
+  const fromOutput = candidate.output?.[0]?.content
+  if (Array.isArray(fromOutput)) {
+    const text = fromOutput
+      .map((item) => (typeof item === 'string' ? item : typeof item?.text === 'string' ? item.text : ''))
+      .join('')
+      .trim()
+    if (text) return text
+  }
+
+  const direct = candidate.message?.content ?? candidate.content
+  if (typeof direct === 'string' && direct.trim()) return direct.trim()
+  if (Array.isArray(direct)) {
+    const text = direct
+      .map((item) => (typeof item === 'string' ? item : typeof item?.text === 'string' ? item.text : ''))
+      .join('')
+      .trim()
+    if (text) return text
+  }
+  return null
+}
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -50,7 +91,7 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-  const gatewayKey = Deno.env.get('AI_GATEWAY_API_KEY') ?? ''
+  const gatewayKey = Deno.env.get('NUGEN_API_KEY') ?? Deno.env.get('AI_GATEWAY_API_KEY') ?? ''
   if (!supabaseUrl || !anonKey) return json({ error: 'The chat service is not configured.' }, 503, headers)
   if (!gatewayKey) return json({ error: 'The AI Gateway key has not been configured for this app.' }, 503, headers)
 
@@ -121,12 +162,14 @@ Deno.serve(async (request) => {
         method: 'POST',
         headers: {
           authorization: `Bearer ${gatewayKey}`,
+          accept: 'application/json',
           'content-type': 'application/json',
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 700,
-          temperature: 0.4,
+          max_tokens: 800,
+          temperature: 0.25,
+          stream: false,
           messages: [
             {
               role: 'system',
@@ -134,7 +177,6 @@ Deno.serve(async (request) => {
             },
             ...messages,
           ],
-          extra_body: { chat_template_kwargs: { enable_thinking: false } },
         }),
         signal: controller.signal,
       })
@@ -143,15 +185,19 @@ Deno.serve(async (request) => {
     }
 
     if (!gatewayResponse.ok) {
-      if (gatewayResponse.status === 401) return json({ error: 'The AI Gateway key was rejected. Ask the app administrator to check its configuration.' }, 502, headers)
-      if (gatewayResponse.status === 400) return json({ error: 'The AI Gateway could not process this request. Try a shorter message.' }, 502, headers)
-      return json({ error: 'The AI Gateway is unavailable right now. Please try again shortly.' }, 502, headers)
+      const providerDetail = (await gatewayResponse.text()).trim().replaceAll(gatewayKey, '[redacted]').slice(0, 300)
+      const detail = providerDetail ? ` Provider response: ${providerDetail}` : ''
+      if (gatewayResponse.status === 401 || gatewayResponse.status === 403) {
+        return json({ error: `Nugen rejected the configured API key (HTTP ${gatewayResponse.status}).${detail}` }, 502, headers)
+      }
+      if (gatewayResponse.status === 400 || gatewayResponse.status === 422) {
+        return json({ error: `Nugen could not process the request (HTTP ${gatewayResponse.status}).${detail}` }, 502, headers)
+      }
+      return json({ error: `Nugen inference is unavailable (HTTP ${gatewayResponse.status}).${detail}` }, 502, headers)
     }
 
-    const result = (await gatewayResponse.json()) as {
-      choices?: { message?: { content?: unknown } }[]
-    }
-    const reply = result.choices?.[0]?.message?.content
+    const result = (await gatewayResponse.json()) as unknown
+    const reply = extractNugenText(result)
     if (typeof reply !== 'string' || !reply.trim()) {
       return json({ error: 'The AI Gateway returned an empty response. Please try again.' }, 502, headers)
     }

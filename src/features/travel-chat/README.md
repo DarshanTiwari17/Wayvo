@@ -4,13 +4,13 @@ The chat widget is mounted only in the authenticated product shell. It sends
 the current conversation to the `wayvo-travel-chat` Supabase Edge Function;
 the college AI Gateway key is never sent to or bundled in the browser.
 
-## Configure the AI Gateway
+## Configure Nugen AI
 
-For local Edge Function development, copy `.env.edge.example` to `.env.edge`
-and set the personal key issued by the TCET Centre of Excellence:
+For local Edge Function development, create `.env.edge` in the Supabase project
+directory and set the Nugen key there:
 
 ```sh
-cp .env.edge.example .env.edge
+NUGEN_API_KEY=your-nugen-key
 ```
 
 Then serve the function with that local environment file:
@@ -23,11 +23,11 @@ For a deployed Supabase project, add the same variable as an Edge Function
 secret:
 
 ```sh
-supabase secrets set AI_GATEWAY_API_KEY=sk-your-personal-key
+supabase secrets set NUGEN_API_KEY=your-nugen-key
 ```
 
-Do not put this key in `.env`, a `VITE_*` variable, source code, or Git. Deploy
-the function after setting it:
+Do not put this key in the Node backend `.env`, a `VITE_*` variable, source
+code, or Git. Deploy the function after setting it:
 
 ```sh
 supabase functions deploy wayvo-travel-chat --no-verify-jwt

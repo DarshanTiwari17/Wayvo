@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom'
 import { ShieldCheck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { useRecoveryPlans } from '../hooks/useTravelData'
+import { useJourneys, useRecoveryPlans } from '../hooks/useTravelData'
 import type { RecoveryPlanStatus } from '../types/database'
 import { Banner, Button, Card, EmptyState, PageHeader, Pill, SectionTitle, SkeletonLines } from '../components/app/Primitives'
+import { JourneySimulation } from '../components/recovery/JourneySimulation'
 
 const PLAN_TONE: Record<RecoveryPlanStatus, 'info' | 'success' | 'neutral'> = {
   proposed: 'info',
@@ -25,6 +26,7 @@ const PLAN_LABEL: Record<RecoveryPlanStatus, string> = {
  */
 export function RecoveryPage() {
   const { user } = useAuth()
+  const journeys = useJourneys(user?.id)
   const plans = useRecoveryPlans(user?.id)
 
   const proposed = plans.status === 'ready' ? plans.rows.filter((p) => p.status === 'proposed').length : 0
@@ -42,6 +44,8 @@ export function RecoveryPage() {
           ) : undefined
         }
       />
+
+      <JourneySimulation journeys={journeys} />
 
       {plans.status === 'loading' && (
         <Card>

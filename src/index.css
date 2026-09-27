@@ -2870,6 +2870,81 @@
     background: var(--color-app-surface-alt);
   }
 
+  .recovery-sim-itinerary {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .recovery-sim-step {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 11px 10px;
+    border-left: 2px solid var(--color-app-border);
+    color: var(--color-app-text-muted);
+    transition: background-color 180ms ease, border-color 180ms ease;
+  }
+
+  .recovery-sim-step__number {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 25px;
+    height: 25px;
+    margin-left: -24px;
+    border: 1px solid var(--color-app-border-strong);
+    border-radius: 50%;
+    background: var(--color-app-surface);
+    color: var(--color-app-text-subtle);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .recovery-sim-step strong {
+    color: var(--color-app-text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .recovery-sim-step--reached {
+    border-left-color: var(--color-app-accent);
+    background: var(--color-app-accent-soft);
+  }
+
+  .recovery-sim-step--reached .recovery-sim-step__number {
+    border-color: var(--color-app-accent);
+    color: var(--color-app-accent);
+  }
+
+  .recovery-sim-step--disrupted {
+    border-left-color: var(--color-app-danger);
+    background: var(--color-app-danger-soft);
+  }
+
+  .recovery-sim-step--disrupted .recovery-sim-step__number {
+    border-color: var(--color-app-danger);
+    color: var(--color-app-danger);
+  }
+
+  .recovery-sim-monitor {
+    padding: 14px 16px;
+    border: 1px solid var(--color-app-border);
+    border-left: 3px solid var(--color-app-info);
+    border-radius: 9px;
+    background: var(--color-app-surface-alt);
+    color: var(--color-app-text-muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .recovery-sim-step {
+      transition: none;
+    }
+  }
+
   /* --- empty states ------------------------------------------------------- */
 
   .wva-empty {

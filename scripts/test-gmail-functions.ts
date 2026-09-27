@@ -7,7 +7,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { transform } from 'esbuild'
 
-const root = 'C:/Users/Lenovo/Desktop/HackCelestial/supabase/functions'
+// Resolved from the repository root rather than hard-coded to one machine.
+const projectRoot = process.cwd()
+const root = path.join(projectRoot, 'supabase', 'functions')
 const results = []
 const check = (n, p, d = '') => {
   results.push({ n, p })
@@ -76,7 +78,7 @@ for (const [name, needles] of expectations) {
 
 /* --- no secret or token may reach a browser bundle ---------------------- */
 {
-  const client = fs.readFileSync('C:/Users/Lenovo/Desktop/HackCelestial/src/services/gmailService.ts', 'utf8')
+  const client = fs.readFileSync(path.join(projectRoot, 'src', 'services', 'gmailService.ts'), 'utf8')
   check('client never references the Google client secret', !client.includes('GOOGLE_CLIENT_SECRET'))
   check('client never references the service role key', !client.includes('SERVICE_ROLE'))
   check('client never puts a JWT in a URL', !/searchParams\.set\(\s*['"]session/.test(client))

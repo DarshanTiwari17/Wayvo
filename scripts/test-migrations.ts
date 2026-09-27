@@ -14,7 +14,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const MIGRATIONS = 'C:/Users/Lenovo/Desktop/HackCelestial/supabase/migrations'
+// Resolved from this file rather than hard-coded, so the check runs on any
+// machine and in CI instead of only the one that wrote it.
+const MIGRATIONS = path.resolve(process.cwd(), 'supabase', 'migrations')
 
 const results: { n: string; p: boolean }[] = []
 const check = (n: string, p: boolean, d = '') => {

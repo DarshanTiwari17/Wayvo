@@ -3,13 +3,17 @@ import { supabaseAnonKey, supabaseUrl } from '../../lib/supabaseConfig'
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
-export async function streamTravelAssistant(messages: ChatMessage[], onToken: (token: string) => void): Promise<void> {
+async function streamEdgeFunction(
+  functionName: string,
+  body: unknown,
+  onToken: (token: string) => void,
+): Promise<void> {
   const { data, error } = await getSupabase().auth.getSession()
   if (error) throw error
   const accessToken = data.session?.access_token
   if (!accessToken) throw new Error('Please sign in to generate the AI brief.')
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/nugen-travel-chat`, {
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${accessToken}`,
@@ -17,7 +21,7 @@ export async function streamTravelAssistant(messages: ChatMessage[], onToken: (t
       accept: 'text/event-stream',
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ messages, stream: true }),
+    body: JSON.stringify(body),
   })
 
   if (!response.ok) {
@@ -86,6 +90,27 @@ export async function streamTravelAssistant(messages: ChatMessage[], onToken: (t
   }
 
   if (!receivedText) throw new Error('Nugen returned an empty response.')
+}
+
+export function streamTravelAssistant(
+  messages: ChatMessage[],
+  onToken: (token: string) => void,
+): Promise<void> {
+  return streamEdgeFunction('nugen-travel-chat', { messages, stream: true }, onToken)
+}
+
+export type RecoverySimulationEvent = {
+  tripId: string
+  segmentId: string
+  kind: 'delay' | 'cancellation' | 'missed connection'
+  delayMinutes: number | null
+}
+
+export function streamRecoverySimulation(
+  event: RecoverySimulationEvent,
+  onToken: (token: string) => void,
+): Promise<void> {
+  return streamEdgeFunction('wayvo-recovery-simulation', { ...event, stream: true }, onToken)
 }
 
 export async function askTravelAssistant(messages: ChatMessage[]): Promise<string> {
