@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { calculateRoute, geocodePlace } from './navigationService.mjs'
+import { fetchSocialSignals, fetchSocialSignalsSummary } from './socialSignalsService.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const envFile = resolve(root, 'backend/.env')
@@ -28,7 +29,7 @@ function headers(request) {
   return {
     'access-control-allow-origin': origin && allowedOrigins.includes(origin) ? origin : 'null',
     'access-control-allow-headers': 'authorization, content-type',
-    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
     'content-type': 'application/json; charset=utf-8',
     vary: 'Origin',
   }
@@ -66,7 +67,63 @@ const server = createServer(async (request, response) => {
     response.end()
     return
   }
-  if (request.method !== 'POST' || !request.url?.startsWith('/api/navigation/')) {
+
+  const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`)
+  const path = url.pathname
+
+  /* ------------------------------------------------------------------
+   * Social Signals (GET)
+   * ---------------------------------------------------------------- */
+
+  if (request.method === 'GET' && path === '/api/social-signals') {
+    try {
+      await requireUser(request)
+
+      const location = url.searchParams.get('location')?.trim() || ''
+      const keyword = url.searchParams.get('keyword')?.trim() || ''
+      const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
+      const limit = Math.min(30, Math.max(1, Number(url.searchParams.get('limit')) || 10))
+
+      if (!location && !keyword) {
+        send(response, request, 400, { error: 'Provide at least a location or keyword.' })
+        return
+      }
+
+      console.log(`[social-signals] location="${location}" keyword="${keyword}" page=${page} limit=${limit}`)
+      const result = await fetchSocialSignals({ location, keyword, page, limit })
+      send(response, request, 200, result)
+    } catch (error) {
+      console.error('[social-signals] error:', error.message)
+      send(response, request, Number(error.statusCode) || 502, { error: error instanceof Error ? error.message : 'Social signals request failed.' })
+    }
+    return
+  }
+
+  if (request.method === 'GET' && path === '/api/social-signals/summary') {
+    try {
+      await requireUser(request)
+
+      const location = url.searchParams.get('location')?.trim() || ''
+      if (!location) {
+        send(response, request, 400, { error: 'A location is required.' })
+        return
+      }
+
+      console.log(`[social-signals] summary location="${location}"`)
+      const result = await fetchSocialSignalsSummary({ location })
+      send(response, request, 200, result)
+    } catch (error) {
+      console.error('[social-signals] summary error:', error.message)
+      send(response, request, Number(error.statusCode) || 502, { error: error instanceof Error ? error.message : 'Social signals summary request failed.' })
+    }
+    return
+  }
+
+  /* ------------------------------------------------------------------
+   * Navigation (POST) — existing endpoints, unchanged
+   * ---------------------------------------------------------------- */
+
+  if (request.method !== 'POST' || !path.startsWith('/api/navigation/')) {
     send(response, request, 404, { error: 'Not found.' })
     return
   }
@@ -74,17 +131,14 @@ const server = createServer(async (request, response) => {
   try {
     await requireUser(request)
     const body = await readJson(request)
-    const apiKey = process.env.OPENROUTESERVICE_API_KEY
-    if (!apiKey) throw Object.assign(new Error('OPENROUTESERVICE_API_KEY is missing from the backend environment.'), { statusCode: 500 })
 
-    const path = new URL(request.url, `http://${request.headers.host || 'localhost'}`).pathname
     if (path === '/api/navigation/geocode') {
       if (typeof body.query !== 'string' || !body.query.trim()) throw Object.assign(new Error('A place is required.'), { statusCode: 400 })
-      send(response, request, 200, { coordinates: await geocodePlace(body.query.trim(), apiKey) })
+      send(response, request, 200, { coordinates: await geocodePlace(body.query.trim()) })
       return
     }
     if (path === '/api/navigation/route') {
-      send(response, request, 200, await calculateRoute(body, apiKey))
+      send(response, request, 200, await calculateRoute(body))
       return
     }
     send(response, request, 404, { error: 'Not found.' })
@@ -93,4 +147,4 @@ const server = createServer(async (request, response) => {
   }
 })
 
-server.listen(port, () => console.log(`Wayvo navigation backend listening on http://localhost:${port}`))
+server.listen(port, () => console.log(`Wayvo backend listening on http://localhost:${port}`))

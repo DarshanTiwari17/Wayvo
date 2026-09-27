@@ -33,6 +33,10 @@ export default defineConfig({
         target: 'http://localhost:8787',
         changeOrigin: true,
       },
+      '/api/social-signals': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+      },
     },
   },
 })

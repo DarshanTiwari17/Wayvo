@@ -7,7 +7,6 @@ import { NavigationControls } from './NavigationControls'
 import { RecoveryMap } from './RecoveryMap'
 import { RecoveryProgress } from './RecoveryProgress'
 import { RecoveryStepCard } from './RecoveryStepCard'
-import { RecoveryStepList } from './RecoveryStepList'
 
 export function RecoveryNavigation({ data, currentLocation, onRecenter }: { data: RecoveryNavigationData; currentLocation?: DeviceLocation | null; onRecenter?: () => void }) {
   const navigation = useRecoveryNavigation(data.steps.length)
@@ -19,9 +18,9 @@ export function RecoveryNavigation({ data, currentLocation, onRecenter }: { data
       <div className="mx-auto max-w-2xl">
         <Card className="py-14 text-center">
           <CheckCircle2 size={44} className="mx-auto text-app-accent" aria-hidden="true" />
-          <h1 className="wva-h1 mt-5">{data.kind === 'recovery' ? 'Recovery session completed' : 'Journey completed'}</h1>
-          <p className="wva-body mx-auto mt-3 max-w-md">You have completed all steps in this {data.kind === 'recovery' ? 'recovery session' : 'journey'}.</p>
-          <Link to={data.kind === 'recovery' ? '/recovery' : '/journeys'} className="wva-btn wva-btn--primary mt-7"><ArrowLeft size={15} aria-hidden="true" /> Back to {data.kind === 'recovery' ? 'Recovery' : 'Journeys'}</Link>
+          <h1 className="wva-h1 mt-5">Journey completed</h1>
+          <p className="wva-body mx-auto mt-3 max-w-md">You have completed all steps in this journey.</p>
+          <Link to="/journeys" className="wva-btn wva-btn--primary mt-7"><ArrowLeft size={15} aria-hidden="true" /> Back to Journeys</Link>
         </Card>
       </div>
     )
@@ -29,13 +28,9 @@ export function RecoveryNavigation({ data, currentLocation, onRecenter }: { data
 
   return (
     <>
-      <PageHeader title={data.kind === 'recovery' ? 'Navigate your recovery' : 'Navigate your journey'} description={data.summary} actions={<Link to={data.kind === 'recovery' ? '/recovery' : '/journeys'} className="wva-btn wva-btn--secondary"><ArrowLeft size={15} aria-hidden="true" /> Back to {data.kind === 'recovery' ? 'Recovery' : 'Journeys'}</Link>} />
+      <PageHeader title="Navigate your journey" description={data.summary} actions={<Link to="/journeys" className="wva-btn wva-btn--secondary"><ArrowLeft size={15} aria-hidden="true" /> Back to Journeys</Link>} />
       <Banner tone="info">
-        {data.routeGeometry ? (
-          <><strong className="font-semibold">OpenRouteService route.</strong> This route uses your saved journey endpoints. It does not include live traffic or GPS tracking.</>
-        ) : (
-          <><strong className="font-semibold">Demo recovery session.</strong> This recovery route is illustrative until recovery route data is provided.</>
-        )}
+        <strong className="font-semibold">OpenRouteService route.</strong> This route uses your saved journey endpoints. It does not include live traffic or GPS tracking.
       </Banner>
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="order-2 flex min-w-0 flex-col gap-5 lg:order-1">
@@ -48,7 +43,6 @@ export function RecoveryNavigation({ data, currentLocation, onRecenter }: { data
             {currentStep ? <RecoveryStepCard step={currentStep} status={currentStepCompleted ? 'completed' : 'current'} /> : <p className="wva-body mt-4">No route available.</p>}
             <div className="mt-5"><NavigationControls isNavigating={navigation.isNavigating} isFinished={navigation.isFinished} currentStep={navigation.currentStep} totalSteps={data.steps.length} currentStepCompleted={currentStepCompleted} onStart={navigation.startNavigation} onNext={navigation.nextStep} onPrevious={navigation.previousStep} onComplete={navigation.completeCurrentStep} onFinish={navigation.finishNavigation} onReset={navigation.resetNavigation} /></div>
           </Card>
-          <RecoveryStepList steps={data.steps} currentStep={navigation.currentStep} completedSteps={navigation.completedSteps} onStart={navigation.startNavigation} heading={data.kind === 'journey' ? 'Your journey route' : 'Your recovery route'} />
         </div>
         <div className="order-1 min-w-0 lg:order-2"><RecoveryMap steps={data.steps} currentStep={navigation.currentStep} completedSteps={navigation.completedSteps} routeGeometry={data.routeGeometry} currentLocation={currentLocation} onRecenter={onRecenter} /></div>
       </div>

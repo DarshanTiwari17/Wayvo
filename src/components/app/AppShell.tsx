@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, LayoutGrid, LogOut, Map, Menu, Navigation, ShieldCheck, User, X } from 'lucide-react'
+import { Bell, LayoutGrid, LogOut, Map, Menu, Navigation, Radio, ShieldCheck, User, X } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { fetchOpenDisruptions } from '../../services/travelService'
 import { TravelChatWidget } from '../../features/travel-chat/TravelChatWidget'
@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/recovery', label: 'Recovery', icon: ShieldCheck },
   { to: '/navigation', label: 'Navigate', icon: Navigation },
+  { to: '/social-signals', label: 'Social Signals', icon: Radio },
 ]
 
 export function AppShell() {
