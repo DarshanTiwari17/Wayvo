@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { calculateRoute, geocodePlace } from './navigationService.mjs'
 import { fetchSocialSignals, fetchSocialSignalsSummary } from './socialSignalsService.mjs'
+import { fetchWeather } from './weatherService.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const envFile = resolve(root, 'backend/.env')
@@ -57,8 +58,14 @@ async function requireUser(request) {
   const anonKey = process.env.SUPABASE_ANON_KEY
   const authorization = request.headers.authorization
   if (!supabaseUrl || !anonKey || !authorization) throw Object.assign(new Error('Navigation backend is not configured or the user is unauthorised.'), { statusCode: 401 })
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { authorization, apikey: anonKey } })
-  if (!response.ok) throw Object.assign(new Error('Unauthorised.'), { statusCode: 401 })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { authorization, apikey: anonKey }, signal: controller.signal })
+    if (!response.ok) throw Object.assign(new Error('Unauthorised.'), { statusCode: 401 })
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 const server = createServer(async (request, response) => {
@@ -115,6 +122,33 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       console.error('[social-signals] summary error:', error.message)
       send(response, request, Number(error.statusCode) || 502, { error: error instanceof Error ? error.message : 'Social signals summary request failed.' })
+    }
+    return
+  }
+
+  /* ------------------------------------------------------------------
+   * Weather (GET)
+   * ---------------------------------------------------------------- */
+
+  if (request.method === 'GET' && path === '/api/weather') {
+    try {
+      await requireUser(request)
+
+      const lat = Number(url.searchParams.get('lat')) || undefined
+      const lng = Number(url.searchParams.get('lng')) || undefined
+      const place = url.searchParams.get('place')?.trim() || undefined
+
+      if ((!lat || !lng) && !place) {
+        send(response, request, 400, { error: 'Provide lat/lng or place.' })
+        return
+      }
+
+      console.log(`[weather] lat=${lat} lng=${lng} place="${place}"`)
+      const result = await fetchWeather({ lat, lng, place })
+      send(response, request, 200, result)
+    } catch (error) {
+      console.error('[weather] error:', error.message)
+      send(response, request, Number(error.statusCode) || 502, { error: error instanceof Error ? error.message : 'Weather request failed.' })
     }
     return
   }
