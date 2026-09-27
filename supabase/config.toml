@@ -69,6 +69,10 @@ verify_jwt = true
 # validates the caller's Supabase JWT itself before reading any user data.
 verify_jwt = false
 
+[functions.nugen-travel-chat]
+# This separate function performs its own Supabase JWT validation.
+verify_jwt = false
+
 [functions.gmail-callback]
 verify_jwt = false
 

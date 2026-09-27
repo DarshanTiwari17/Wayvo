@@ -12,9 +12,10 @@
     "test:parser": "esbuild scripts/test-booking-parser.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/parser.mjs --log-level=warning && node node_modules/.cache/parser.mjs",
     "test:itinerary": "esbuild scripts/test-itinerary.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/itinerary.mjs --log-level=warning && node node_modules/.cache/itinerary.mjs",
     "test:navigation": "esbuild scripts/test-navigation.ts --bundle --platform=node --format=esm --define:import.meta.env.VITE_SUPABASE_URL=undefined --define:import.meta.env.VITE_SUPABASE_ANON_KEY=undefined --define:import.meta.env.VITE_SUPABASE_EMAIL_REDIRECT_URL=undefined --outfile=node_modules/.cache/navigation.mjs --log-level=warning && node node_modules/.cache/navigation.mjs",
+    "test:digital-twin": "esbuild scripts/test-digital-twin.ts --bundle --platform=node --format=esm --define:import.meta.env.VITE_SUPABASE_URL=undefined --define:import.meta.env.VITE_SUPABASE_ANON_KEY=undefined --define:import.meta.env.VITE_SUPABASE_EMAIL_REDIRECT_URL=undefined --define:import.meta.env.VITE_WEATHER_API_KEY=undefined --outfile=node_modules/.cache/digital-twin.mjs --log-level=warning && node node_modules/.cache/digital-twin.mjs",
     "test:gmail": "esbuild scripts/test-gmail-flow.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/gmail-flow.mjs --log-level=warning && node node_modules/.cache/gmail-flow.mjs",
     "test:functions": "esbuild scripts/test-gmail-functions.ts --bundle --platform=node --format=esm --external:esbuild --outfile=node_modules/.cache/gmail-functions.mjs --log-level=warning && node node_modules/.cache/gmail-functions.mjs",
-    "test": "npm run test:migrations && npm run test:parser && npm run test:itinerary && npm run test:gmail && npm run test:functions",
+    "test": "npm run test:migrations && npm run test:parser && npm run test:itinerary && npm run test:digital-twin && npm run test:navigation && npm run test:gmail && npm run test:functions",
     "test:migrations": "esbuild scripts/test-migrations.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/migrations.mjs --log-level=warning && node node_modules/.cache/migrations.mjs"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.13",
     "@types/leaflet": "^1.9.22",
+    "@types/node": "^24.6.0",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
