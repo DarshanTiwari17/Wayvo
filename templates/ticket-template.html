@@ -1,0 +1,146 @@
+<!doctype html>
+<!--
+  Wayvo ticket template — fill in the [bracketed] placeholders, then print to
+  PDF (Ctrl/Cmd + P → "Save as PDF") and upload that file to Wayvo.
+
+  The layout is deliberate: each field is on its own line with a clear label,
+  which is exactly what the extractor reads best. Keep the labels as they are.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Wayvo ticket template</title>
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        color: #111;
+        margin: 48px;
+        font-size: 16px;
+      }
+      .ticket {
+        max-width: 640px;
+        margin: 0 auto;
+        border: 1px solid #999;
+        padding: 32px 40px;
+      }
+      .operator {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+      }
+      .doc-type {
+        font-size: 13px;
+        color: #555;
+        margin-bottom: 28px;
+      }
+      .row {
+        margin-bottom: 14px;
+      }
+      .label {
+        display: block;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #777;
+        margin-bottom: 2px;
+      }
+      .value {
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .route {
+        font-size: 24px;
+        font-weight: 800;
+        margin: 10px 0 22px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 32px;
+      }
+      .value.blank {
+        color: #999;
+        font-weight: 400;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ticket">
+      <div class="operator">[OPERATOR — e.g. IndiGo / Indian Railways / Shivneri]</div>
+      <div class="doc-type">Booking confirmation</div>
+
+      <div class="route">[ORIGIN] → [DESTINATION]</div>
+
+      <div class="grid">
+        <div class="row">
+          <span class="label">From</span>
+          <span class="value">[ORIGIN STATION — e.g. Mumbai Central]</span>
+        </div>
+        <div class="row">
+          <span class="label">To</span>
+          <span class="value">[DESTINATION STATION — e.g. Panvel]</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Departure date</span>
+          <span class="value">[DD-MMM-YYYY — e.g. 27-Sep-2026]</span>
+        </div>
+        <div class="row">
+          <span class="label">Departure time</span>
+          <span class="value">[HH:MM — e.g. 08:00]</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Arrival date</span>
+          <span class="value">[DD-MMM-YYYY — e.g. 27-Sep-2026]</span>
+        </div>
+        <div class="row">
+          <span class="label">Arrival time</span>
+          <span class="value">[HH:MM — e.g. 09:15]</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Passenger</span>
+          <span class="value">[PASSENGER FULL NAME]</span>
+        </div>
+        <div class="row">
+          <span class="label">Service / train / flight no.</span>
+          <span class="value">[SERVICE NUMBER — e.g. 6E 2145 / 12123 / 4412]</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Coach / class</span>
+          <span class="value">[COACH — e.g. C4 / 14A / AC 2 tier]</span>
+        </div>
+        <div class="row">
+          <span class="label">Seat</span>
+          <span class="value">[SEAT — e.g. 18 / 14A]</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Booking reference</span>
+          <span class="value">[BOOKING REFERENCE / TICKET NO.]</span>
+        </div>
+        <div class="row">
+          <span class="label">PNR</span>
+          <span class="value">[PNR — leave blank if none]</span>
+        </div>
+
+        <div class="row">
+          <span class="label">Total fare</span>
+          <span class="value">[AMOUNT + CURRENCY — e.g. Rs. 1,247 / $45.50]</span>
+        </div>
+        <div class="row">
+          <span class="label">Status</span>
+          <span class="value">[STATUS — e.g. CONFIRMED / CANCELLED / WAITLISTED]</span>
+        </div>
+      </div>
+    </div>
+
+    <p style="max-width:640px;margin:24px auto 0;font-size:12px;color:#888;text-align:center">
+      Replace every [bracketed] value. Keep the labels unchanged. Delete any
+      field that does not apply. Print to PDF and upload.
+    </p>
+  </body>
+</html>

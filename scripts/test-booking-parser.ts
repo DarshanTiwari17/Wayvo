@@ -158,6 +158,27 @@ const check = (name, pass, detail = '') => {
   check('flight: booking reference found', f.bookingReference === 'QW7X2B', String(f.bookingReference))
   check('flight: fare', f.fare === 8450, String(f.fare))
   check('flight: usable', isUsableJourney(r), `conf ${r.confidence}`)
+
+  const itineraryTicket = extractJourneyFromText(`
+    Your Travel Ticket
+    Mumbai -> Delhi -> Jaipur
+    Flight
+    Air India • AI-302
+    Mumbai (BOM)
+    Departure 10:30 AM
+    Tue, 24 Sep 2026
+    Delhi (DEL)
+    Arrival 2:40 PM
+    Tue, 24 Sep 2026
+    Train
+    Indian Railways • 12951
+    Delhi (DEL) 2:00 PM -> Jaipur (JP) 7:30 PM
+    Hotel Royal Residency, Jaipur
+  `).fields
+  check('composite ticket: first flight segment wins over later train', itineraryTicket.transportMode === 'flight', String(itineraryTicket.transportMode))
+  check('composite ticket: flight number and airline', itineraryTicket.serviceNumber === 'AI302' && /air india/i.test(itineraryTicket.operator ?? ''), `${itineraryTicket.operator} ${itineraryTicket.serviceNumber}`)
+  check('composite ticket: flight route', /mumbai/i.test(itineraryTicket.origin ?? '') && /delhi/i.test(itineraryTicket.destination ?? ''), `${itineraryTicket.origin} -> ${itineraryTicket.destination}`)
+  check('composite ticket: flight times', itineraryTicket.departureTime === '10:30' && itineraryTicket.arrivalTime === '14:40', `${itineraryTicket.departureTime} -> ${itineraryTicket.arrivalTime}`)
 }
 
 /* ==========================================================================
@@ -186,6 +207,46 @@ const check = (name, pass, detail = '') => {
 }
 
 /* ==========================================================================
+ * 3b. Fare extraction must not crash on a bare currency amount
+ *
+ * The labelled pattern has three capture groups (before, amount, after) but
+ * the symbol fallback has only one. Reading group 2 from the symbol match
+ * returned undefined and threw "Cannot read properties of undefined (reading
+ * 'replace')", which took the whole extraction down with it.
+ * ========================================================================== */
+{
+  const bare = extractJourneyFromText(`
+    From: MUMBAI CENTRAL
+    To: PANVEL
+    Departure: 14-Nov-2026 08:00
+    Arrival: 14-Nov-2026 09:15
+    Passenger: RAHUL SHARMA
+    ₹342
+  `)
+  check('a bare ₹ amount is read without crashing', bare.fields.fare === 342, String(bare.fields.fare))
+  check('  and the currency is INR', bare.fields.currency === 'INR', String(bare.fields.currency))
+  check('  and the journey is still usable', isUsableJourney(bare))
+
+  const labelled = extractJourneyFromText(`
+    From: Mumbai
+    To: Pune
+    Departure: 14-Nov-2026 08:00
+    Arrival: 14-Nov-2026 09:15
+    Total Fare: Rs. 1,247
+  `)
+  check('a labelled "Total Fare" still works', labelled.fields.fare === 1247, String(labelled.fields.fare))
+
+  const dollars = extractJourneyFromText(`
+    From: Mumbai
+    To: Pune
+    Departure: 14-Nov-2026 08:00
+    Arrival: 14-Nov-2026 09:15
+    $45.50
+  `)
+  check('a bare $ amount is read as USD', dollars.fields.fare === 45.5 && dollars.fields.currency === 'USD', `${dollars.fields.fare} ${dollars.fields.currency}`)
+}
+
+/* ==========================================================================
  * 4. Bus ticket
  * ========================================================================== */
 {
@@ -207,6 +268,84 @@ const check = (name, pass, detail = '') => {
   check('bus: route', /mumbai/i.test(f.origin ?? '') && /goa/i.test(f.destination ?? ''), `${f.origin} -> ${f.destination}`)
   check('bus: departure', f.departureDate === '2026-09-29' && f.departureTime === '22:00', `${f.departureDate} ${f.departureTime}`)
   check('bus: usable', isUsableJourney(r), `conf ${r.confidence}`)
+}
+
+/* ==========================================================================
+ * 4b. MSRTC ticket with separate base fare and amount paid
+ * ========================================================================== */
+{
+  const text = `
+    Maharashtra State Road Transport Corporation (MSRTC)
+    BUS TICKET
+    Online Booking Confirmation
+    Booking ID: MSRTA268451
+    Booking Date: 22 Sep 2026 10:18 AM
+    Ticket No: 9823476512
+    FROM
+    Panvel Bus Stand -> TO
+    Alibaug Bus Stand
+    Panvel Alibaug
+    Departure Time
+    11:15 AM
+    27 Sep 2026 (Sun)
+    Arrival Time
+    12:45 PM
+    27 Sep 2026 (Sun)
+    Bus Details
+    Service Panvel - Alibaug
+    Operator MSRTC
+    Bus Type Ordinary
+    Duration 1 hr 30 min
+    Seat No. 18
+    Passenger Details
+    Name Rahul Sharma
+    Age 28
+    Gender Male
+    Fare Details
+    Base Fare ₹120.00
+    Booking Charges ₹10.00
+    Total Amount Paid ₹130.00
+  `
+  const f = extractJourneyFromText(text).fields
+  check('MSRTC: route', /panvel/i.test(f.origin ?? '') && /alibaug/i.test(f.destination ?? ''), `${f.origin} -> ${f.destination}`)
+  check('MSRTC: departure date and time', f.departureDate === '2026-09-27' && f.departureTime === '11:15', `${f.departureDate} ${f.departureTime}`)
+  check('MSRTC: arrival date and time', f.arrivalDate === '2026-09-27' && f.arrivalTime === '12:45', `${f.arrivalDate} ${f.arrivalTime}`)
+  check('MSRTC: total paid rather than base fare', f.fare === 130 && f.currency === 'INR', `${f.fare} ${f.currency}`)
+
+  const serviceOnly = extractJourneyFromText(`
+    MSRTC Bus Ticket
+    Service Panvel - Alibaug
+    Departure: 27 Sep 2026 11:15 AM
+  `).fields
+  check('MSRTC: service route is a fallback', /panvel/i.test(serviceOnly.origin ?? '') && /alibaug/i.test(serviceOnly.destination ?? ''), `${serviceOnly.origin} -> ${serviceOnly.destination}`)
+
+  const rupeeMisread = extractJourneyFromText(`
+    MSRTC Bus Ticket
+    Total Amount Paid €130.00
+  `).fields
+  check('MSRTC: OCR euro-symbol confusion is treated as INR', rupeeMisread.fare === 130 && rupeeMisread.currency === 'INR', `${rupeeMisread.fare} ${rupeeMisread.currency}`)
+
+  const noisyOcr = extractJourneyFromText(`
+    MSRTC BUS TICKET
+    Indian Railways
+    Train No: 12101
+    WRT XA E -> Ticket
+  `).fields
+  check('MSRTC OCR: bus context wins over stray train text', noisyOcr.transportMode === 'bus', String(noisyOcr.transportMode))
+  check('MSRTC OCR: junk arrow text is not accepted as a route', noisyOcr.origin === null && noisyOcr.destination === null, `${noisyOcr.origin} -> ${noisyOcr.destination}`)
+
+  const rowWiseOcr = extractJourneyFromText(`
+    MSRTC Bus Ticket
+    FROM TO
+    Panvel Bus Stand Alibaug Bus Stand
+    Departure Time Arrival Time
+    11:15 AM 12:45 PM
+    27 Sep 2026 (Sun) 27 Sep 2026 (Sun)
+    Service Panvel - Alibaug
+    Total Amount Paid ₹130.00
+  `).fields
+  check('MSRTC OCR: service route overrides label/place interleaving', /panvel/i.test(rowWiseOcr.origin ?? '') && /alibaug/i.test(rowWiseOcr.destination ?? ''), `${rowWiseOcr.origin} -> ${rowWiseOcr.destination}`)
+  check('MSRTC OCR: parallel time columns retain distinct times', rowWiseOcr.departureTime === '11:15' && rowWiseOcr.arrivalTime === '12:45', `${rowWiseOcr.departureTime} -> ${rowWiseOcr.arrivalTime}`)
 }
 
 /* ==========================================================================

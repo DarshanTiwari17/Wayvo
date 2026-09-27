@@ -106,6 +106,7 @@ const PLACE_NOISE = new Set([
   'station', 'junction', 'airport', 'terminal', 'platform', 'gate',
   'from', 'to', 'on', 'at', 'via', 'and', 'total', 'fare', 'adult', 'child',
   'date', 'time', 'valid', 'not', 'boarding', 'passenger', 'class', 'seat', 'coach',
+  'from', 'to', 'origin', 'destination',
 ])
 
 /** Trims trailing ticket keywords off a matched place name. */
@@ -134,6 +135,8 @@ const NOT_A_PLACE = new Set([
   'important', 'please', 'dear', 'regards', 'sincerely', 'best', 'wish',
   'enjoy', 'stay', 'stays', 'visit', 'travel', 'travels', 'journey', 'reservation',
   'reservations', 'itinerary', 'total', 'amount', 'paid', 'price', 'fare',
+  'from', 'to', 'origin', 'destination',
+  'ticket',
 ])
 
 /**
@@ -268,6 +271,17 @@ function findRoute(text: string): { origin: string | null; destination: string |
     }
   }
 
+  const serviceRoute = text.match(
+    new RegExp(String.raw`\b(?:service|route)\s*[:#-]?\s*(${CITY})\s*(?:→|->|=>|➔|[-–—])\s*(${CITY})`, 'i'),
+  )
+  if (serviceRoute) {
+    const origin = titleish(serviceRoute[1])
+    const destination = titleish(serviceRoute[2])
+    if (looksLikePlace(origin) && looksLikePlace(destination) && origin !== destination) {
+      return { origin, destination }
+    }
+  }
+
   // "Mumbai → Pune", "Mumbai to Pune", "Mumbai - Pune"
   const patterns = [
     new RegExp(String.raw`(${CITY})\s*(?:→|->|=>|➔)\s*(${CITY})`),
@@ -379,24 +393,39 @@ function findTransport(text: string): {
 } {
   // Most specific evidence first. "check-in" is deliberately not a flight
   // signal, because hotels use it too.
-  const hotelWord = /\b(hotel|resort|check-?in|check-?out|room\s*(?:no\.?|number)?|night stay|guest)\b/i.test(text)
-  const trainWord = /\btrain\b/i.test(text)
-  const flightWord = /\b(flight|airline|airways|boarding pass|airport|web check-in)\b/i.test(text)
-  const busWord = /\b(bus|coach|volvo|seabird|shivneri|private hire)\b/i.test(text)
-  const ferryWord = /\b(ferry|boat|vessel|cruise|gangway)\b/i.test(text)
+  const modeSignals: { mode: TransportMode; index: number }[] = []
+  const addSignal = (mode: TransportMode, pattern: RegExp) => {
+    const index = text.search(pattern)
+    if (index >= 0) modeSignals.push({ mode, index })
+  }
+  addSignal('flight', /\b(flight|airline|airways|boarding pass|airport|web check-in)\b/i)
+  addSignal('train', /\btrain\b/i)
+  addSignal('bus', /\b(bus|coach|volvo|seabird|shivneri|private hire|msrtc|maharashtra state road transport corporation)\b/i)
+  addSignal('hotel', /\b(hotel|resort|check-?in|check-?out|room\s*(?:no\.?|number)?|night stay|guest)\b/i)
+  addSignal('ferry', /\b(ferry|boat|vessel|cruise|gangway)\b/i)
+  const mode = modeSignals.sort((a, b) => a.index - b.index)[0]?.mode
+  const busService = () => {
+    const number = text.match(/\bbus\s*(?:no\.?|number|service)?\s*[:#-]?\s*([A-Z]{1,2}\s?\d{2,4})\b/i)
+    const operator = text.match(/\b(msrtc|volvo|seabird|shivneri|neeta tours?|patel travels?|orange tours?|easyroon)\b/i)
+    return {
+      mode: 'bus' as const,
+      serviceNumber: number ? number[1].toUpperCase().replace(/\s/g, '') : null,
+      operator: operator ? (/^msrtc$/i.test(operator[1]) ? 'MSRTC' : titleish(operator[1])) : null,
+    }
+  }
 
-  if (trainWord) {
+  if (mode === 'train') {
     const number = text.match(/\btrain\s*(?:no\.?|number)?\s*[:#-]?\s*([1-9]\d{4})\b/i)
     const operator = findRailwayOperator(text)
     return { mode: 'train', serviceNumber: number?.[1] ?? null, operator: operator ? titleish(operator[0]) : null }
   }
 
-  if (hotelWord) {
+  if (mode === 'hotel') {
     const hotel = text.match(/\b([A-Z][A-Za-z&.' -]{3,40}?(?:Hotel|Resort|Inn|House|Marriott|Hilton|Hyatt|Ibis)\b)/)
     return { mode: 'hotel', serviceNumber: null, operator: hotel ? titleish(hotel[1]) : null }
   }
 
-  if (flightWord) {
+  if (mode === 'flight') {
     // Airline designators are not always two letters: IndiGo uses "6E".
     const labelled = text.match(/\bflight\s*(?:no\.?|number)?\s*[:#-]?\s*([A-Z0-9]{2})\s*-?\s*(\d{3,4})\b/i)
     const bare = text.match(/\b([A-Z0-9]{2})\s?-?\s?(\d{3,4})\b/)
@@ -410,13 +439,11 @@ function findTransport(text: string): {
     return { mode: 'flight', serviceNumber: number, operator: operator ? titleish(operator[0]) : null }
   }
 
-  if (busWord) {
-    const number = text.match(/\bbus\s*(?:no\.?|number|service)?\s*[:#-]?\s*([A-Z]{1,2}\s?\d{2,4})\b/i)
-    const operator = text.match(/\b(volvo|seabird|shivneri|neeta tours?|patel travels?|orange tours?|easyroon)\b/i)
-    return { mode: 'bus', serviceNumber: number ? number[1].toUpperCase().replace(/\s/g, '') : null, operator: operator ? titleish(operator[1]) : null }
+  if (mode === 'bus') {
+    return busService()
   }
 
-  if (ferryWord) {
+  if (mode === 'ferry') {
     return { mode: 'ferry', serviceNumber: null, operator: null }
   }
 
@@ -498,6 +525,16 @@ function findFare(text: string): { fare: number | null; currency: string | null 
   const before = String.raw`(₹|INR|Rs\.?|USD|\$|EUR|€|GBP|£)?`
   const after = String.raw`\s*(₹|INR|Rs\.?|USD|\$|EUR|€|GBP|£)?`
 
+  const totalLabelled = text.match(
+    new RegExp(
+      String.raw`\b(?:grand\s*total|total\s*(?:amount\s*paid|fare|amount|price)|amount\s*paid|total\s*paid)\s*[:#-]?\s*` +
+        before +
+        String.raw`\s*` +
+        amount +
+        after,
+      'i',
+    ),
+  )
   const labelled = text.match(
     new RegExp(
       String.raw`\b(?:grand\s*total|total\s*(?:fare|amount|price)?|amount|fare|price|paid)\s*[:#-]?\s*` +
@@ -511,10 +548,12 @@ function findFare(text: string): { fare: number | null; currency: string | null 
   )
   const symbol = text.match(new RegExp(String.raw`[₹$€£]\s*` + amount + String.raw`\s*(?:only)?`, 'i'))
 
-  const m = labelled ?? symbol
+  const m = totalLabelled ?? labelled ?? symbol
   if (!m) return { fare: null, currency: null }
 
-  const fare = Number(m[2].replace(/,/g, ''))
+  // `labelled` has 3 capture groups (before, amount, after); `symbol` has 1.
+  const rawAmount = labelled ? m[2] : m[1]
+  const fare = Number(rawAmount.replace(/,/g, ''))
   if (!Number.isFinite(fare)) return { fare: null, currency: null }
 
   const token = `${m[1] ?? ''} ${m[3] ?? ''} ${m[0]}`.toLowerCase()
@@ -523,6 +562,11 @@ function findFare(text: string): { fare: number | null; currency: string | null 
   else if (/usd|\$/.test(token)) currency = 'USD'
   else if (/eur|€/.test(token)) currency = 'EUR'
   else if (/gbp|£/.test(token)) currency = 'GBP'
+
+  // OCR can mistake the rupee sign for a euro sign; MSRTC tickets are INR.
+  if (/\bmsrtc\b|maharashtra state road transport corporation/i.test(text) && (!currency || currency === 'EUR')) {
+    currency = 'INR'
+  }
 
   return { fare, currency }
 }
@@ -662,15 +706,32 @@ export function extractJourneyFromText(rawText: string): ExtractionResult {
 
   const departureDate =
     departureKeyword >= 0 ? (dates.find((d) => d.index >= departureKeyword) ?? dates[0]) : dates[0]
-  const arrivalDate =
-    arrivalKeyword >= 0 ? (dates.find((d) => d.index >= arrivalKeyword) ?? dates[1] ?? null) : (dates[1] ?? null)
+  const datesAfterDeparture = departureKeyword >= 0 ? dates.filter((date) => date.index >= departureKeyword) : dates
+  const parallelDateLabels =
+    departureKeyword >= 0 &&
+    arrivalKeyword > departureKeyword &&
+    arrivalKeyword < (datesAfterDeparture[0]?.index ?? Number.POSITIVE_INFINITY)
+  const arrivalDate = parallelDateLabels
+    ? (datesAfterDeparture[1] ?? datesAfterDeparture[0] ?? null)
+    : arrivalKeyword >= 0
+      ? (dates.find((d) => d.index >= arrivalKeyword) ?? dates[1] ?? null)
+      : (dates[1] ?? null)
 
   fields.departureDate = mark('departureDate', departureDate?.iso ?? null)
   fields.arrivalDate = mark('arrivalDate', arrivalDate?.iso ?? null)
 
   const after = (from: number) => times.filter((t) => t.index > from)
-  const departureTime = (departureKeyword >= 0 ? after(departureKeyword)[0] : null) ?? times[0] ?? null
-  const arrivalTime = arrivalKeyword >= 0 ? (after(arrivalKeyword)[0] ?? null) : (times[1] ?? null)
+  const timesAfterDeparture = departureKeyword >= 0 ? after(departureKeyword) : times
+  const parallelTimeLabels =
+    departureKeyword >= 0 &&
+    arrivalKeyword > departureKeyword &&
+    arrivalKeyword < (timesAfterDeparture[0]?.index ?? Number.POSITIVE_INFINITY)
+  const departureTime = timesAfterDeparture[0] ?? times[0] ?? null
+  const arrivalTime = parallelTimeLabels
+    ? (timesAfterDeparture[1] ?? null)
+    : arrivalKeyword >= 0
+      ? (after(arrivalKeyword)[0] ?? null)
+      : (times[1] ?? null)
 
   fields.departureTime = mark('departureTime', departureTime?.hm ?? null)
   fields.arrivalTime = mark('arrivalTime', arrivalTime?.hm ?? null)

@@ -5,6 +5,12 @@ import { useTripSegments } from '../../features/digital-twin/useDigitalTwin'
 import { streamRecoverySimulation } from '../../features/travel-chat/travelChatService'
 import { formatDateRange, formatRoute } from '../../services/travelService'
 import { Banner, Button, Card, EmptyState, Pill, SkeletonLines } from '../app/Primitives'
+import {
+  planRealisticDisruption,
+  simulationDurationMs,
+  type PlannedDisruption,
+  type SimulatedDisruptionKind,
+} from './simulationModel'
 
 type JourneyQuery = {
   rows: Trip[]
@@ -13,19 +19,17 @@ type JourneyQuery = {
   reload: () => void
 }
 
-type DisruptionKind = 'delay' | 'cancellation' | 'missed connection'
-type SimulationStatus = 'running' | 'disrupted' | 'analyzing' | 'complete' | 'error'
+type AnalysisStatus = 'idle' | 'analyzing' | 'complete' | 'error'
 
 type SimulationRun = {
   id: string
   tripId: string
   segments: JourneySegment[]
-  disruptedIndex: number
-  disruptionKind: DisruptionKind
-  delayMinutes: number | null
+  disruption: PlannedDisruption | null
   stepIndex: number
-  status: SimulationStatus
-  startedAt: string
+  durationMs: number
+  status: 'running' | 'complete'
+  analysisStatus: AnalysisStatus
   recommendation: string
   error: string | null
 }
@@ -34,24 +38,10 @@ type Props = {
   journeys: JourneyQuery
 }
 
-const DISRUPTION_LABEL: Record<DisruptionKind, string> = {
+const DISRUPTION_LABEL: Record<SimulatedDisruptionKind, string> = {
   delay: 'Departure delay',
   cancellation: 'Service cancellation',
   'missed connection': 'Missed connection',
-}
-
-function randomIndex(length: number): number {
-  if (length <= 1) return 0
-  const values = new Uint32Array(1)
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(values)
-    return values[0] % length
-  }
-  return Math.floor(Math.random() * length)
-}
-
-function randomDelayMinutes(): number {
-  return 15 + randomIndex(46)
 }
 
 function formatTimestamp(value: string | null): string {
@@ -76,83 +66,85 @@ function locationText(segment: JourneySegment): string {
   return 'Location not provided'
 }
 
-function chooseDisruption(segment: JourneySegment, nextSegment: JourneySegment | undefined): { kind: DisruptionKind; delayMinutes: number | null } {
-  const options: Array<{ kind: DisruptionKind; delayMinutes: number | null }> = [
-    { kind: 'delay', delayMinutes: randomDelayMinutes() },
-    { kind: 'cancellation', delayMinutes: null },
-  ]
-  if (nextSegment && segment.transport_mode !== 'hotel' && nextSegment.connection_minutes !== null) {
-    options.push({
-      kind: 'missed connection',
-      delayMinutes: Math.max(randomDelayMinutes(), nextSegment.connection_minutes + 5),
-    })
-  }
-  return options[randomIndex(options.length)]
-}
-
 export function JourneySimulation({ journeys }: Props) {
   const [simulation, setSimulation] = useState<SimulationRun | null>(null)
-  const busy = simulation !== null && ['running', 'disrupted', 'analyzing'].includes(simulation.status)
+  const busy = simulation?.status === 'running' || simulation?.analysisStatus === 'analyzing'
+  const runStatus = simulation?.status
+  const stepIndex = simulation?.stepIndex
+  const segmentCount = simulation?.segments.length ?? 0
+  const durationMs = simulation?.durationMs
 
   useEffect(() => {
-    if (!simulation || simulation.status !== 'running') return
+    if (runStatus !== 'running' || stepIndex === undefined || segmentCount === 0 || durationMs === undefined) return
+    const stepDurationMs = Math.ceil(durationMs / segmentCount)
     const timer = window.setTimeout(() => {
       setSimulation((current) => {
         if (!current || current.status !== 'running') return current
         const nextIndex = current.stepIndex + 1
-        return {
-          ...current,
-          stepIndex: nextIndex,
-          status: nextIndex === current.disruptedIndex ? 'disrupted' : 'running',
+        if (nextIndex >= current.segments.length - 1) {
+          return { ...current, stepIndex: current.segments.length - 1, status: 'complete' }
         }
+        return { ...current, stepIndex: nextIndex }
       })
-    }, 850)
+    }, stepDurationMs)
     return () => window.clearTimeout(timer)
-  }, [simulation])
+  }, [runStatus, stepIndex, segmentCount, durationMs])
 
   useEffect(() => {
-    if (!simulation || simulation.status !== 'disrupted') return
+    if (
+      !simulation ||
+      !simulation.disruption ||
+      simulation.stepIndex < simulation.disruption.segmentIndex ||
+      simulation.analysisStatus !== 'idle'
+    ) return
     const activeRun = simulation
+    if (!activeRun.disruption) return
+    const disruption = activeRun.disruption
     const tripExists = journeys.rows.some((row) => row.id === activeRun.tripId)
     if (!tripExists) {
-      setSimulation((current) => current?.id === activeRun.id ? { ...current, status: 'error', error: 'The selected trip is no longer available.' } : current)
+      setSimulation((current) => current?.id === activeRun.id
+        ? { ...current, analysisStatus: 'error', error: 'The selected trip is no longer available.' }
+        : current)
       return
     }
 
-    setSimulation((current) => current?.id === activeRun.id ? { ...current, status: 'analyzing' } : current)
-    const disruptedSegment = activeRun.segments[activeRun.disruptedIndex]
+    setSimulation((current) => current?.id === activeRun.id ? { ...current, analysisStatus: 'analyzing' } : current)
+    const disruptedSegment = activeRun.segments[disruption.segmentIndex]
+    if (!disruptedSegment) {
+      setSimulation((current) => current?.id === activeRun.id
+        ? { ...current, analysisStatus: 'error', error: 'The disrupted itinerary step is no longer available.' }
+        : current)
+      return
+    }
     void streamRecoverySimulation({
       tripId: activeRun.tripId,
       segmentId: disruptedSegment.id,
-      kind: activeRun.disruptionKind,
-      delayMinutes: activeRun.delayMinutes,
+      kind: disruption.kind,
+      delayMinutes: disruption.delayMinutes,
     },
       (token) => setSimulation((current) => current?.id === activeRun.id
         ? { ...current, recommendation: current.recommendation + token }
         : current),
     ).then(() => {
-      setSimulation((current) => current?.id === activeRun.id ? { ...current, status: 'complete' } : current)
+      setSimulation((current) => current?.id === activeRun.id ? { ...current, analysisStatus: 'complete' } : current)
     }).catch((cause: unknown) => {
       setSimulation((current) => current?.id === activeRun.id
-        ? { ...current, status: 'error', error: cause instanceof Error ? cause.message : 'The AI monitor could not produce a recommendation.' }
+        ? { ...current, analysisStatus: 'error', error: cause instanceof Error ? cause.message : 'The AI monitor could not produce a recommendation.' }
         : current)
     })
   }, [simulation, journeys.rows])
 
   function startSimulation(trip: Trip, segments: JourneySegment[]) {
     if (segments.length === 0 || busy) return
-    const disruptedIndex = randomIndex(segments.length)
-    const disruption = chooseDisruption(segments[disruptedIndex], segments[disruptedIndex + 1])
     setSimulation({
-      id: `${trip.id}-${Date.now()}-${randomIndex(1_000_000)}`,
+      id: `${trip.id}-${Date.now()}`,
       tripId: trip.id,
       segments,
-      disruptedIndex,
-      disruptionKind: disruption.kind,
-      delayMinutes: disruption.delayMinutes,
+      disruption: planRealisticDisruption(segments),
       stepIndex: -1,
+      durationMs: simulationDurationMs(segments.length),
       status: 'running',
-      startedAt: new Date().toISOString(),
+      analysisStatus: 'idle',
       recommendation: '',
       error: null,
     })
@@ -160,7 +152,7 @@ export function JourneySimulation({ journeys }: Props) {
 
   function retryAiAnalysis(runId: string) {
     setSimulation((current) => current?.id === runId
-      ? { ...current, status: 'disrupted', recommendation: '', error: null }
+      ? { ...current, analysisStatus: 'idle', recommendation: '', error: null }
       : current)
   }
 
@@ -168,9 +160,9 @@ export function JourneySimulation({ journeys }: Props) {
     <section className="mb-7" aria-labelledby="journey-simulation-title">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="wva-eyebrow">Live simulation</p>
+          <p className="wva-eyebrow">Journey simulation</p>
           <h2 id="journey-simulation-title" className="wva-h2 mt-1">Your itineraries</h2>
-          <p className="wva-body mt-1">Play a saved journey and let the AI assess one simulated disruption against its exact itinerary.</p>
+          <p className="wva-body mt-1">Watch a hypothetical service disruption progress through a saved itinerary. This is not a live alert.</p>
         </div>
         {busy && <Pill tone="warn"><Activity size={12} aria-hidden="true" /> Simulation in progress</Pill>}
       </div>
@@ -223,7 +215,8 @@ function JourneySimulationCard({
   onRetryAI: (runId: string) => void
 }) {
   const segments = useTripSegments(trip.id)
-  const affected = simulation?.segments[simulation.disruptedIndex]
+  const disruption = simulation?.disruption
+  const affected = disruption ? simulation?.segments[disruption.segmentIndex] : null
 
   return (
     <Card>
@@ -250,7 +243,7 @@ function JourneySimulationCard({
       {segments.status === 'ready' && segments.rows.length > 0 && (
         <ol className="recovery-sim-itinerary mt-4">
           {segments.rows.map((segment, index) => {
-            const isDisrupted = simulation !== null && index === simulation.disruptedIndex && simulation.stepIndex >= index
+            const isDisrupted = disruption !== undefined && disruption !== null && index === disruption.segmentIndex && (simulation?.stepIndex ?? -1) >= index
             const isReached = simulation !== null && index <= simulation.stepIndex
             return (
               <li className={`recovery-sim-step${isDisrupted ? ' recovery-sim-step--disrupted' : isReached ? ' recovery-sim-step--reached' : ''}`} key={segment.id}>
@@ -261,7 +254,7 @@ function JourneySimulationCard({
                     {segment.transport_mode && <span className="wva-meta">{segment.transport_mode}</span>}
                     {segment.operator_name && <span className="wva-meta">· {segment.operator_name}</span>}
                     {segment.service_number && <span className="wva-meta">· {segment.service_number}</span>}
-                    {isDisrupted && <Pill tone="danger">{DISRUPTION_LABEL[simulation.disruptionKind]}</Pill>}
+                    {isDisrupted && disruption && <Pill tone="danger">{DISRUPTION_LABEL[disruption.kind]}</Pill>}
                   </div>
                   <p className="wva-meta mt-1">
                     {formatTimestamp(segment.departure_at)}
@@ -281,27 +274,28 @@ function JourneySimulationCard({
         </ol>
       )}
 
-      {simulation && affected && (
+      {simulation && (
         <div className="recovery-sim-monitor mt-4" aria-live="polite">
           <div className="flex items-center gap-2">
-            {simulation.status === 'analyzing' ? <Sparkles size={16} aria-hidden="true" /> : <Activity size={16} aria-hidden="true" />}
+            {simulation.analysisStatus === 'analyzing' ? <Sparkles size={16} aria-hidden="true" /> : <Activity size={16} aria-hidden="true" />}
             <p className="text-[14px] font-semibold">
               {simulation.status === 'running' && 'Journey in progress'}
-              {simulation.status === 'disrupted' && 'Disruption detected'}
-              {simulation.status === 'analyzing' && 'AI monitoring itinerary'}
-              {simulation.status === 'complete' && 'Recovery recommendation'}
-              {simulation.status === 'error' && 'AI monitor unavailable'}
+              {simulation.status === 'complete' && 'Journey completed'}
             </p>
           </div>
-          {simulation.stepIndex >= simulation.disruptedIndex && (
+          {disruption && affected && simulation.stepIndex >= disruption.segmentIndex && (
             <p className="wva-body mt-2">
-              Simulated {DISRUPTION_LABEL[simulation.disruptionKind].toLowerCase()} on step {simulation.disruptedIndex + 1}: {locationText(affected)}
-              {simulation.delayMinutes !== null ? ` · ${simulation.delayMinutes} minutes` : ''}
+              Hypothetical {DISRUPTION_LABEL[disruption.kind].toLowerCase()} on step {disruption.segmentIndex + 1}: {locationText(affected)}
+              {disruption.delayMinutes !== null ? ` · ${disruption.delayMinutes} minutes` : ''}
               {affected.departure_at ? ` · ${formatTimestamp(affected.departure_at)}` : ''}.
             </p>
           )}
+          {simulation.analysisStatus === 'analyzing' && <p className="wva-meta mt-3">Assessing the remaining itinerary and connection buffers…</p>}
           {simulation.recommendation && <p className="wva-body mt-3 whitespace-pre-wrap">{simulation.recommendation}</p>}
-          {simulation.status === 'error' && (
+          {simulation.status === 'complete' && !disruption && (
+            <p className="wva-meta mt-3">No scheduled transport segment was available for a realistic disruption scenario.</p>
+          )}
+          {simulation.analysisStatus === 'error' && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               <p className="wva-meta text-app-danger">{simulation.error}</p>
               <Button
@@ -313,7 +307,7 @@ function JourneySimulationCard({
               </Button>
             </div>
           )}
-          {simulation.status === 'complete' && (
+          {simulation.analysisStatus === 'complete' && (
             <p className="wva-meta mt-3">AI advice is based on your saved itinerary and plans. Service availability and fares have not been verified; confirm with the operator before changing bookings.</p>
           )}
         </div>

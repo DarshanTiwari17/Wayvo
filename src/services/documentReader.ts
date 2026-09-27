@@ -33,7 +33,7 @@ export function describeAccepted(): string {
 
 export function validateFile(file: File): string | null {
   if (!ACCEPTED_MIME.includes(file.type) && !ACCEPTED_EXT.test(file.name)) {
-    return 'This file type isn\'t supported. Please upload a PDF or image of your booking.'
+    return "This file type isn't supported. Please upload a PDF or image of your booking."
   }
   if (file.size === 0) {
     return 'That file is empty. Please choose the booking confirmation again.'
@@ -47,14 +47,82 @@ export function validateFile(file: File): string | null {
 function humanError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : String(error)
   if (/password/i.test(message)) return 'That PDF is password protected. Please upload an unprotected copy.'
-  if (/invalid|corrupt|structure/i.test(message)) return 'We couldn\'t read this document. Try uploading a clearer image or PDF.'
+  if (/invalid|corrupt|structure/i.test(message)) return "We couldn't read this document. Try uploading a clearer image or PDF."
   if (/network|fetch|load/i.test(message)) return 'The text reader failed to load. Check your connection and try again.'
   return fallback
 }
 
 /* -------------------------------------------------------------------------- */
 
-async function readPdf(file: File): Promise<ReadOutcome> {
+interface PositionedPdfTextItem {
+  str: string
+  transform: number[]
+  width: number
+  height: number
+  hasEOL?: boolean
+}
+
+/** Rebuild page text by position so PDF item order and missing spaces don't corrupt fields. */
+export function reconstructPdfPageText(items: readonly PositionedPdfTextItem[]): string {
+  const rows: { y: number; items: PositionedPdfTextItem[] }[] = []
+
+  for (const item of items) {
+    if (!item.str.trim() || item.transform.length < 6) continue
+    const x = item.transform[4]
+    const y = item.transform[5]
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+
+    let row = rows.find((candidate) => Math.abs(candidate.y - y) <= 2)
+    if (!row) {
+      row = { y, items: [] }
+      rows.push(row)
+    }
+    row.items.push(item)
+  }
+
+  return rows
+    .sort((a, b) => b.y - a.y)
+    .map(({ items: rowItems }) => {
+      const ordered = rowItems.sort((a, b) => a.transform[4] - b.transform[4])
+      let line = ''
+      let previous: PositionedPdfTextItem | null = null
+
+      for (const item of ordered) {
+        const gap = previous ? item.transform[4] - (previous.transform[4] + previous.width) : 0
+        const spaceThreshold = Math.max(1.5, Math.min(item.height, previous?.height ?? item.height) * 0.15)
+        if (previous && gap > spaceThreshold && !/\s$/.test(line) && !/^\s/.test(item.str)) line += ' '
+        line += item.str
+        previous = item
+      }
+
+      return line.trim()
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
+type OcrWorker = {
+  recognize: (source: File | HTMLCanvasElement) => Promise<{ data: { text: string } }>
+  terminate: () => Promise<void>
+}
+
+let ocrWorker: OcrWorker | null = null
+let ocrProgressCallback: ((percent: number) => void) | undefined
+
+async function getOcrWorker(): Promise<OcrWorker> {
+  if (!ocrWorker) {
+    const { default: Tesseract } = await import('tesseract.js')
+    ocrWorker = (await Tesseract.createWorker('eng', 1, {
+      logger: (m: { status: string; progress: number }) => {
+        if (m.status === 'recognizing text') ocrProgressCallback?.(m.progress)
+      },
+    })) as unknown as OcrWorker
+  }
+  return ocrWorker
+}
+
+async function readPdf(file: File, onProgress?: (percent: number) => void): Promise<ReadOutcome> {
+  let destroyDocument: (() => Promise<void>) | null = null
   try {
     const pdfjs = await import('pdfjs-dist')
     // Use the bundled worker so this works offline and from any origin.
@@ -62,69 +130,111 @@ async function readPdf(file: File): Promise<ReadOutcome> {
     pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
     const data = new Uint8Array(await file.arrayBuffer())
-    const doc = await pdfjs.getDocument({ data }).promise
+    const loadingTask = pdfjs.getDocument({ data })
+    const pdfDocument = await loadingTask.promise
+    destroyDocument = () => loadingTask.destroy()
 
     const pages: string[] = []
-    for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
-      const page = await doc.getPage(pageNumber)
+    for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+      const page = await pdfDocument.getPage(pageNumber)
       const content = await page.getTextContent()
-      // Rebuild reading order: pdf.js items already carry their transform, so
-      // grouping by line keeps "Mumbai Pune 07:10" from becoming interleaved.
-      const line = content.items
-        .map((item) => ('str' in item ? { text: item.str, y: Math.round(item.transform[5]) } : null))
-        .filter((item): item is { text: string; y: number } => Boolean(item?.text))
-      const grouped = new Map<number, string>()
-      for (const item of line) {
-        grouped.set(item.y, (grouped.get(item.y) ?? '') + item.text + ' ')
-      }
-      pages.push([...grouped.entries()].sort((a, b) => b[0] - a[0]).map(([, text]) => text.trim()).join('\n'))
+      const textItems = content.items.flatMap((item) => {
+        if (
+          !('str' in item) ||
+          typeof item.str !== 'string' ||
+          !Array.isArray(item.transform) ||
+          typeof item.width !== 'number' ||
+          typeof item.height !== 'number'
+        ) {
+          return []
+        }
+        return [{ str: item.str, transform: item.transform, width: item.width, height: item.height }]
+      })
+      pages.push(reconstructPdfPageText(textItems))
     }
 
     const text = pages.join('\n\n').replace(/[ \t]{2,}/g, ' ').trim()
-    if (text.replace(/[^a-z0-9]/gi, '').length < 12) {
-      return {
-        ok: false,
-        reason:
-          'We couldn\'t read this document. If it is a scanned image rather than a text PDF, upload the ticket as a photo instead.',
-      }
+    if (text.replace(/[^a-z0-9]/gi, '').length >= 12) {
+      return { ok: true, text, method: 'pdf-text' }
     }
-    return { ok: true, text, method: 'pdf-text' }
+
+    // Scanned PDFs have no embedded text layer, so render their pages and OCR them.
+    ocrProgressCallback = onProgress
+    try {
+      const worker = await getOcrWorker()
+      const ocrPages: string[] = []
+      for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+        const page = await pdfDocument.getPage(pageNumber)
+        const baseViewport = page.getViewport({ scale: 1 })
+        const scale = Math.min(2, 4096 / Math.max(baseViewport.width, baseViewport.height))
+        const viewport = page.getViewport({ scale })
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.ceil(viewport.width)
+        canvas.height = Math.ceil(viewport.height)
+        const context = canvas.getContext('2d')
+        if (!context) throw new Error('Could not create a canvas for PDF text recognition.')
+
+        await page.render({ canvas, canvasContext: context, viewport }).promise
+        ocrPages.push((await worker.recognize(canvas)).data.text)
+      }
+
+      const ocrText = ocrPages.join('\n\n').replace(/[ \t]{2,}/g, ' ').trim()
+      if (ocrText.replace(/[^a-z0-9]/gi, '').length >= 12) return { ok: true, text: ocrText, method: 'ocr' }
+      return { ok: false, reason: "We couldn't find readable text in that PDF. Try a clearer scan of the ticket." }
+    } finally {
+      ocrProgressCallback = undefined
+    }
   } catch (error) {
-    return { ok: false, reason: humanError(error, 'We couldn\'t read this document. Try uploading a clearer image or PDF.') }
+    return { ok: false, reason: humanError(error, "We couldn't read this document. Try uploading a clearer image or PDF.") }
+  } finally {
+    await destroyDocument?.().catch(() => undefined)
   }
 }
 
-let ocrWorker: unknown = null
+async function prepareImageForOcr(file: File): Promise<File | HTMLCanvasElement> {
+  let bitmap: ImageBitmap | null = null
+  try {
+    bitmap = await createImageBitmap(file)
+    const scale = Math.min(3, 4096 / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.ceil(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.ceil(bitmap.height * scale))
+    const context = canvas.getContext('2d')
+    if (!context) return file
+
+    context.imageSmoothingEnabled = true
+    context.imageSmoothingQuality = 'high'
+    context.filter = 'grayscale(100%) contrast(1.2)'
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    return canvas
+  } catch {
+    return file
+  } finally {
+    bitmap?.close()
+  }
+}
 
 async function readImage(file: File, onProgress?: (percent: number) => void): Promise<ReadOutcome> {
   try {
-    const { default: Tesseract } = await import('tesseract.js')
-
-    if (!ocrWorker) {
-      ocrWorker = await Tesseract.createWorker('eng', 1, {
-        logger: (m: { status: string; progress: number }) => {
-          if (m.status === 'recognizing text' && onProgress) onProgress(m.progress)
-        },
-      })
-    }
-
-    const result = (await (ocrWorker as { recognize: (f: File) => Promise<{ data: { text: string } }> }).recognize(
-      file,
-    )) as { data: { text: string } }
+    ocrProgressCallback = onProgress
+    const worker = await getOcrWorker()
+    const result = await worker.recognize(await prepareImageForOcr(file))
 
     const text = result.data.text.replace(/[ \t]{2,}/g, ' ').trim()
     if (text.replace(/[^a-z0-9]/gi, '').length < 12) {
       return {
         ok: false,
-        reason: 'We couldn\'t find any readable text in that image. Try a sharper, better-lit photo of the ticket.',
+        reason: "We couldn't find any readable text in that image. Try a sharper, better-lit photo of the ticket.",
       }
     }
     return { ok: true, text, method: 'ocr' }
   } catch (error) {
     return {
       ok: false,
-      reason: humanError(error, 'We couldn\'t read this image. Try a clearer, better-lit photo of the ticket.'),
+      reason: humanError(error, "We couldn't read this image. Try a clearer, better-lit photo of the ticket."),
     }
+  } finally {
+    ocrProgressCallback = undefined
   }
 }
 
@@ -132,7 +242,7 @@ async function readImage(file: File, onProgress?: (percent: number) => void): Pr
 export async function releaseOcr(): Promise<void> {
   if (!ocrWorker) return
   try {
-    await (ocrWorker as { terminate: () => Promise<void> }).terminate()
+    await ocrWorker.terminate()
   } catch {
     /* the worker is going away regardless */
   }
@@ -147,5 +257,5 @@ export function readDocument(
   if (invalid) return Promise.resolve({ ok: false, reason: invalid })
 
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
-  return isPdf ? readPdf(file) : readImage(file, onProgress)
+  return isPdf ? readPdf(file, onProgress) : readImage(file, onProgress)
 }
